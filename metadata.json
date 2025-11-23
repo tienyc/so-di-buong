@@ -1,0 +1,7 @@
+{
+  "name": "SmartRound - Sổ Đi Buồng 4.0",
+  "description": "Ứng dụng quản lý đi buồng, y lệnh và lên lịch mổ thông minh hỗ trợ AI dành cho bác sĩ và điều dưỡng.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
