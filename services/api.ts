@@ -173,6 +173,7 @@ export async function confirmDischarge(
 interface SettingsResponse {
   wards?: WardConfig[];
   dropdowns?: DropdownConfig[];
+  surgerySheetUrl?: string;
 }
 
 const DOCTOR = 'DOCTOR';
@@ -220,6 +221,7 @@ export async function fetchSettings(): Promise<SettingsPayload> {
     ),
     surgeryRequirements: pickDropdownValues(dropdowns, REQ as DropdownType),
     wards,
+    surgerySheetUrl: data.surgerySheetUrl || '',
   };
 }
 
@@ -242,6 +244,7 @@ export async function saveSettings(settings: SettingsPayload): Promise<void> {
         settings.surgeryRequirements,
       ),
     ],
+    surgerySheetUrl: settings.surgerySheetUrl || '',
   };
 
   await postJson('saveSettings', payload);

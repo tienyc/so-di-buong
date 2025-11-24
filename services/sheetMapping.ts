@@ -203,6 +203,7 @@ export interface SettingsPayload {
     anesthesiaMethods: string[];
     surgeryClassifications: string[];
     surgeryRequirements: string[];
+    surgerySheetUrl?: string; // URL to department surgery schedule sheet
 }
 
 export interface RawWardConfig {

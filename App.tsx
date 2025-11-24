@@ -163,6 +163,7 @@ const App: React.FC = () => {
                 setAnesthesiaMethods(settings.anesthesiaMethods);
                 setSurgeryClassifications(settings.surgeryClassifications);
                 setSurgeryRequirements(settings.surgeryRequirements);
+                setSurgerySheetUrl(settings.surgerySheetUrl || '');
                 setWardConfigs(settings.wards);
                 setRooms(buildRoomBlocksFromConfig([], settings.wards));
                 setSettingsLoaded(true);
@@ -218,6 +219,7 @@ const App: React.FC = () => {
             surgeryClassifications,
             surgeryRequirements,
             wards: deriveWardConfigsFromRooms(),
+            surgerySheetUrl,
         };
         setIsSavingSettings(true);
         saveSettings(payload)
@@ -231,7 +233,7 @@ const App: React.FC = () => {
                 setNotification({ message: 'Lưu cấu hình thất bại', type: 'error' });
             })
             .finally(() => setIsSavingSettings(false));
-    }, [configDirty, settingsLoaded, doctors, operatingRooms, anesthesiaMethods, surgeryClassifications, surgeryRequirements, rooms, isSavingSettings]);
+    }, [configDirty, settingsLoaded, doctors, operatingRooms, anesthesiaMethods, surgeryClassifications, surgeryRequirements, surgerySheetUrl, rooms, isSavingSettings]);
 
     // --- Derived Data ---
     const selectedPatient = useMemo(() => {
