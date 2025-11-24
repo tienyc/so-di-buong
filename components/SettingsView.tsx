@@ -10,8 +10,10 @@ interface SettingsViewProps {
     onUpdateRooms: (rooms: RoomBlock[]) => void;
     sheetUrl?: string;
     onUpdateSheetUrl?: (url: string) => void;
+    surgerySheetUrl?: string;
+    onUpdateSurgerySheetUrl?: (url: string) => void;
     onConfigChange?: () => void;
-    
+
     // New Config Props
     operatingRooms?: string[];
     onUpdateOperatingRooms?: (list: string[]) => void;
@@ -23,10 +25,11 @@ interface SettingsViewProps {
     onUpdateSurgeryRequirements?: (list: string[]) => void;
 }
 
-const SettingsView: React.FC<SettingsViewProps> = ({ 
-    doctors, onUpdateDoctors, 
-    rooms, onUpdateRooms, 
+const SettingsView: React.FC<SettingsViewProps> = ({
+    doctors, onUpdateDoctors,
+    rooms, onUpdateRooms,
     sheetUrl = '', onUpdateSheetUrl,
+    surgerySheetUrl = '', onUpdateSurgerySheetUrl,
     operatingRooms = [], onUpdateOperatingRooms,
     anesthesiaMethods = [], onUpdateAnesthesiaMethods,
     surgeryClassifications = [], onUpdateSurgeryClassifications,
@@ -193,17 +196,41 @@ const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden mb-6">
                  <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
                     <div className="bg-green-100 p-1.5 rounded-lg text-green-700"><Table size={20} /></div>
-                    <h3 className="font-bold text-slate-800">Liên kết Lịch Mổ (Google Sheet)</h3>
+                    <h3 className="font-bold text-slate-800">Liên kết Google Sheet</h3>
                 </div>
-                <div className="p-5">
-                    <p className="text-sm text-gray-500 mb-3">Dán đường dẫn (Link) file Google Sheet lịch mổ của khoa vào đây.</p>
-                    <input 
-                        type="url" 
-                        value={sheetUrl}
-                        onChange={(e) => onUpdateSheetUrl && onUpdateSheetUrl(e.target.value)}
-                        placeholder="https://docs.google.com/spreadsheets/d/..."
-                        className="w-full bg-gray-50 border-transparent rounded-xl p-3 focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                    />
+                <div className="p-5 space-y-4">
+                    {/* Main Patient Sheet */}
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Sheet bệnh nhân (Data chính)</label>
+                        <p className="text-xs text-gray-500 mb-2">Dán đường dẫn file Google Sheet quản lý bệnh nhân của bạn.</p>
+                        <input
+                            type="url"
+                            value={sheetUrl}
+                            onChange={(e) => onUpdateSheetUrl && onUpdateSheetUrl(e.target.value)}
+                            placeholder="https://docs.google.com/spreadsheets/d/..."
+                            className="w-full bg-gray-50 border-transparent rounded-xl p-3 focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                        />
+                    </div>
+
+                    {/* Surgery Sheet for Department */}
+                    <div className="pt-4 border-t border-gray-200">
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Sheet lịch mổ khoa (Đồng bộ)</label>
+                        <p className="text-xs text-gray-500 mb-2">
+                            Dán <strong>Web App URL</strong> của Apps Script đã deploy trên sheet lịch mổ khoa.
+                            <br />
+                            <span className="text-emerald-600 font-semibold">💡 Hướng dẫn:</span> Mở sheet lịch mổ → Extensions → Apps Script → Paste code từ <code className="bg-gray-100 px-1 rounded">docs/SurgerySheetScript.gs</code> → Deploy as Web App → Copy URL
+                        </p>
+                        <input
+                            type="url"
+                            value={surgerySheetUrl}
+                            onChange={(e) => {
+                                onUpdateSurgerySheetUrl && onUpdateSurgerySheetUrl(e.target.value);
+                                onConfigChange && onConfigChange();
+                            }}
+                            placeholder="https://script.google.com/macros/s/..."
+                            className="w-full bg-emerald-50 border border-emerald-200 rounded-xl p-3 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                        />
+                    </div>
                 </div>
             </div>
 

@@ -4,6 +4,7 @@ import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, 
 import { formatForGoogleSheet } from './services/geminiService';
 import { fetchPatients, fetchOrders, savePatient, saveOrder, confirmDischarge, fetchSettings, saveSettings } from './services/api';
 import { buildRoomBlocksFromConfig, WardConfig, SettingsPayload } from './services/sheetMapping';
+import { syncSurgeryToKhoa, syncBatchSurgeries } from './services/surgerySync';
 import PatientCard from './components/PatientCard';
 import OrderModal from './components/OrderModal';
 import TransferModal from './components/TransferModal';
@@ -93,6 +94,11 @@ const App: React.FC = () => {
         return localStorage.getItem(`${STORAGE_KEY_PREFIX}sheet_url`) || '';
     });
 
+    // Load Surgery Sheet URL (for department sync)
+    const [surgerySheetUrl, setSurgerySheetUrl] = useState<string>(() => {
+        return localStorage.getItem(`${STORAGE_KEY_PREFIX}surgery_sheet_url`) || '';
+    });
+
     const [wardConfigs, setWardConfigs] = useState<WardConfig[]>([]);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
     const [configDirty, setConfigDirty] = useState(false);
@@ -125,6 +131,7 @@ const App: React.FC = () => {
     const [expandedSurgeryGroups, setExpandedSurgeryGroups] = useState<{[key: string]: boolean}>({
         'today': true, 'tomorrow': true, 'upcoming': true
     });
+    const [isSyncingSurgery, setIsSyncingSurgery] = useState(false);
 
     // --- Effects for Persistence ---
     useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}doctors`, JSON.stringify(doctors)); }, [doctors]);
@@ -134,6 +141,7 @@ const App: React.FC = () => {
     useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}surgeryRequirements`, JSON.stringify(surgeryRequirements)); }, [surgeryRequirements]);
     useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}rooms`, JSON.stringify(rooms)); }, [rooms]);
     useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}sheet_url`, sheetUrl); }, [sheetUrl]);
+    useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}surgery_sheet_url`, surgerySheetUrl); }, [surgerySheetUrl]);
 
     // --- Init Logic ---
     useEffect(() => {
@@ -330,6 +338,33 @@ const App: React.FC = () => {
             savePatient(updatedPatient).catch(error => {
                 console.error('Lưu thông tin bệnh nhân thất bại', error);
             });
+
+            // Auto-sync to surgery sheet if surgery info was updated
+            const hasSurgeryUpdate =
+                updates.surgeryDate !== undefined ||
+                updates.surgeryTime !== undefined ||
+                updates.surgeryMethod !== undefined ||
+                updates.surgeonName !== undefined ||
+                updates.operatingRoom !== undefined ||
+                updates.anesthesiaMethod !== undefined ||
+                updates.surgeryClassification !== undefined ||
+                updates.surgeryRequirements !== undefined ||
+                updates.surgeryNotes !== undefined;
+
+            if (hasSurgeryUpdate && updatedPatient.surgeryDate && updatedPatient.surgeryTime) {
+                syncSurgeryToKhoa(updatedPatient)
+                    .then(result => {
+                        if (result.success) {
+                            setNotification({ message: result.message || 'Đã đồng bộ lịch mổ lên khoa', type: 'success' });
+                        } else {
+                            console.error('Sync surgery failed:', result.error);
+                            // Don't show error notification to avoid interrupting workflow
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error syncing surgery:', error);
+                    });
+            }
         }
     };
 
@@ -411,9 +446,47 @@ const App: React.FC = () => {
         const p = rooms.flatMap(r => r.patients).find(pat => pat.id === id);
         if (!p) return;
         const newStatus = !p.isScheduledForSurgery;
-        handleUpdatePatient(id, { 
+        handleUpdatePatient(id, {
             isScheduledForSurgery: newStatus,
         });
+    };
+
+    const handleManualSyncSurgeries = async () => {
+        setIsSyncingSurgery(true);
+
+        // Get all scheduled patients with complete surgery info
+        const scheduledPatients = rooms
+            .flatMap(r => r.patients)
+            .filter(p => p.isScheduledForSurgery && p.surgeryDate && p.surgeryTime);
+
+        if (scheduledPatients.length === 0) {
+            setNotification({ message: 'Không có ca mổ nào để đồng bộ', type: 'error' });
+            setIsSyncingSurgery(false);
+            return;
+        }
+
+        try {
+            const result = await syncBatchSurgeries(scheduledPatients);
+            if (result.success) {
+                setNotification({
+                    message: result.message || `Đã đồng bộ ${result.successCount}/${result.total} ca mổ`,
+                    type: 'success'
+                });
+            } else {
+                setNotification({
+                    message: result.error || 'Đồng bộ thất bại',
+                    type: 'error'
+                });
+            }
+        } catch (error) {
+            console.error('Error in manual sync:', error);
+            setNotification({
+                message: 'Lỗi khi đồng bộ lịch mổ',
+                type: 'error'
+            });
+        } finally {
+            setIsSyncingSurgery(false);
+        }
     };
 
     const handleTransferConfirm = (targetRoomId?: string, targetRoomNumber?: string, notes?: string, date?: string) => {
@@ -655,6 +728,8 @@ const App: React.FC = () => {
                         onUpdateRooms={setRooms}
                         sheetUrl={sheetUrl}
                         onUpdateSheetUrl={setSheetUrl}
+                        surgerySheetUrl={surgerySheetUrl}
+                        onUpdateSurgerySheetUrl={setSurgerySheetUrl}
                         onConfigChange={markConfigDirty}
                         operatingRooms={operatingRooms}
                         onUpdateOperatingRooms={setOperatingRooms}
@@ -707,19 +782,40 @@ const App: React.FC = () => {
                 {/* Surgery Schedule View */}
                 {currentView === AppView.SURGERY_SCHEDULE && (
                     <div className="space-y-4">
-                        {/* Tabs Segmented Control */}
-                        <div className="bg-gray-200/50 p-1 rounded-xl flex font-bold text-sm mb-4">
-                            <button 
-                                onClick={() => setSurgeryTab('WAITING')}
-                                className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 ${surgeryTab === 'WAITING' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                        {/* Tabs Segmented Control + Sync Button */}
+                        <div className="flex gap-3 items-center">
+                            <div className="bg-gray-200/50 p-1 rounded-xl flex font-bold text-sm flex-1">
+                                <button
+                                    onClick={() => setSurgeryTab('WAITING')}
+                                    className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 ${surgeryTab === 'WAITING' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    <List size={16}/> Chờ xếp lịch ({unscheduledPatients.length})
+                                </button>
+                                <button
+                                    onClick={() => setSurgeryTab('SCHEDULED')}
+                                    className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 ${surgeryTab === 'SCHEDULED' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    <CalendarCheck size={16}/> Đã lên lịch ({surgeryGroups.today.length + surgeryGroups.tomorrow.length + surgeryGroups.upcoming.length})
+                                </button>
+                            </div>
+                            {/* Manual Sync Button */}
+                            <button
+                                onClick={handleManualSyncSurgeries}
+                                disabled={isSyncingSurgery}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/30 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                                title="Đồng bộ tất cả ca mổ đã xếp lịch lên sheet khoa"
                             >
-                                <List size={16}/> Chờ xếp lịch ({unscheduledPatients.length})
-                            </button>
-                            <button 
-                                onClick={() => setSurgeryTab('SCHEDULED')}
-                                className={`flex-1 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 ${surgeryTab === 'SCHEDULED' ? 'bg-white text-orange-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                <CalendarCheck size={16}/> Đã lên lịch ({surgeryGroups.today.length + surgeryGroups.tomorrow.length + surgeryGroups.upcoming.length})
+                                {isSyncingSurgery ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        Đang đồng bộ...
+                                    </>
+                                ) : (
+                                    <>
+                                        <ExternalLink size={16} />
+                                        Đồng bộ lên khoa
+                                    </>
+                                )}
                             </button>
                         </div>
 
