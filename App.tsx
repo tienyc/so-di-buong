@@ -34,7 +34,7 @@ const removeVietnameseTones = (str: string) => {
 
 const App: React.FC = () => {
     // --- State with Persistence ---
-    const STORAGE_KEY_PREFIX = 'smartround_v5_'; // Bump version to force clear old data
+    const STORAGE_KEY_PREFIX = 'smartround_v4_'; // Bump version
 
     // Load Doctors
     const [doctors, setDoctors] = useState<string[]>(() => {
@@ -189,27 +189,6 @@ const App: React.FC = () => {
         };
     }, []);
 
-    // --- Derived Data ---
-    const selectedPatient = useMemo(() => {
-        for (const block of rooms) {
-            const p = block.patients.find(p => p.id === selectedPatientId);
-            if (p) return p;
-        }
-        return null;
-    }, [rooms, selectedPatientId]);
-
-    const selectedPatientName = selectedPatient?.fullName || '';
-    const currentBlock = rooms.find(r => r.id === selectedRoomBlockId);
-    
-    // Calculate available rooms in current block for filter
-    const availableRoomsInBlock = useMemo(() => {
-        if (!currentBlock) return [];
-        // Combine defined rooms and rooms currently having patients
-        const patientRooms = Array.from(new Set(currentBlock.patients.map(p => p.roomNumber)));
-        const defined = currentBlock.definedRooms || [];
-        return Array.from(new Set([...defined, ...patientRooms])).sort();
-    }, [currentBlock]);
-
     useEffect(() => {
         if (!notification) return;
         const timeout = setTimeout(() => setNotification(null), 4000);
@@ -245,7 +224,28 @@ const App: React.FC = () => {
             })
             .finally(() => setIsSavingSettings(false));
     }, [configDirty, settingsLoaded, doctors, operatingRooms, anesthesiaMethods, surgeryClassifications, surgeryRequirements, rooms, isSavingSettings]);
+
+    // --- Derived Data ---
+    const selectedPatient = useMemo(() => {
+        for (const block of rooms) {
+            const p = block.patients.find(p => p.id === selectedPatientId);
+            if (p) return p;
+        }
+        return null;
+    }, [rooms, selectedPatientId]);
+
+    const selectedPatientName = selectedPatient?.fullName || '';
+    const currentBlock = rooms.find(r => r.id === selectedRoomBlockId);
     
+    // Calculate available rooms in current block for filter
+    const availableRoomsInBlock = useMemo(() => {
+        if (!currentBlock) return [];
+        // Combine defined rooms and rooms currently having patients
+        const patientRooms = Array.from(new Set(currentBlock.patients.map(p => p.roomNumber)));
+        const defined = currentBlock.definedRooms || [];
+        return Array.from(new Set([...defined, ...patientRooms])).sort();
+    }, [currentBlock]);
+
 
     // --- Logic Handlers ---
 
@@ -305,8 +305,7 @@ const App: React.FC = () => {
         setIsAddPatientModalOpen(false);
 
         try {
-            const saved = await Promise.all(normalizedPatients.map(patient => savePatient(patient)));
-            saved.forEach(replacePatientInState);
+            await Promise.all(normalizedPatients.map(patient => savePatient(patient)));
             setNotification({ message: 'Đã lưu bệnh nhân mới thành công', type: 'success' });
         } catch (error) {
             console.error('Lỗi khi lưu bệnh nhân mới:', error);
@@ -336,7 +335,7 @@ const App: React.FC = () => {
 
     const handleAddOrder = async (orderData: Omit<MedicalOrder, 'id'>, isDischargeOrder?: boolean, dischargeDate?: string) => {
         if (!selectedPatientId) return;
-        
+
         const newOrder: MedicalOrder = {
             ...orderData,
             id: Math.random().toString(36).substr(2, 9)
@@ -365,8 +364,7 @@ const App: React.FC = () => {
         }
 
         try {
-            const savedOrder = await saveOrder(newOrder);
-            replaceOrderInState(selectedPatientId, savedOrder);
+            await saveOrder(newOrder);
             setNotification({ message: 'Y lệnh đã được lưu', type: 'success' });
         } catch (error) {
             console.error('Lưu y lệnh thất bại', error);
@@ -460,12 +458,11 @@ const App: React.FC = () => {
     }
     };
 
-    // Actual final confirmation to archive patient
     const handleConfirmDischarge = (id: string) => {
         if (window.confirm('Xác nhận bệnh nhân đã hoàn tất thủ tục và rời khoa? Bệnh nhân sẽ được lưu hồ sơ.')) {
             const updatedRooms = rooms.map(block => ({
                 ...block,
-                patients: block.patients.map(p => p.id === id ? { ...p, status: PatientStatus.ARCHIVED } : p) // Change to ARCHIVED to hide
+                patients: block.patients.map(p => p.id === id ? { ...p, status: PatientStatus.ARCHIVED } : p)
             }));
             setRooms(updatedRooms);
             const dischargeDate = new Date().toISOString().split('T')[0];
@@ -651,17 +648,16 @@ const App: React.FC = () => {
                 
                 {/* Settings View */}
                 {currentView === AppView.SETTINGS && (
-                <SettingsView 
-                    doctors={doctors} 
-                    onUpdateDoctors={setDoctors}
-                    rooms={rooms}
-                    onUpdateRooms={setRooms}
-                    sheetUrl={sheetUrl}
-                    onUpdateSheetUrl={setSheetUrl}
-                    onConfigChange={markConfigDirty}
-                    // New Props
-                    operatingRooms={operatingRooms}
-                    onUpdateOperatingRooms={setOperatingRooms}
+                    <SettingsView
+                        doctors={doctors}
+                        onUpdateDoctors={setDoctors}
+                        rooms={rooms}
+                        onUpdateRooms={setRooms}
+                        sheetUrl={sheetUrl}
+                        onUpdateSheetUrl={setSheetUrl}
+                        onConfigChange={markConfigDirty}
+                        operatingRooms={operatingRooms}
+                        onUpdateOperatingRooms={setOperatingRooms}
                         anesthesiaMethods={anesthesiaMethods}
                         onUpdateAnesthesiaMethods={setAnesthesiaMethods}
                         surgeryClassifications={surgeryClassifications}
