@@ -35,7 +35,7 @@ const removeVietnameseTones = (str: string) => {
 
 const App: React.FC = () => {
     // --- State with Persistence ---
-    const STORAGE_KEY_PREFIX = 'smartround_v4_'; // Bump version
+    const STORAGE_KEY_PREFIX = 'smartround_v5_'; // Keep in sync with surgerySync.ts
 
     // Load Doctors
     const [doctors, setDoctors] = useState<string[]>(() => {
