@@ -1,5 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { OrderType } from "../types";
+import { getWardFromRoom, getRoomWardMappingForPrompt, getAllValidRooms } from "./roomMapping";
+
+// Re-export for other components
+export { getWardFromRoom } from "./roomMapping";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -9,6 +12,10 @@ export const parsePatientInput = async (inputText: string) => {
     try {
         const currentDate = new Date().toLocaleDateString('vi-VN');
         const todayISO = new Date().toISOString().split('T')[0];
+
+        // Get valid rooms mapping for the prompt
+        const validRooms = getAllValidRooms();
+        const roomWardMapping = getRoomWardMappingForPrompt();
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -36,43 +43,58 @@ Phân tích văn bản không có cấu trúc (có thể 1 hoặc nhiều bệnh
    - Nữ: "nữ", "nu", "f", "bà", "chị", "cô"
    - Không rõ → ""
 
-4️⃣ **Phòng/Khu (roomNumber, ward):**
-   Mã hợp lệ (không phân biệt hoa/thường):
-   - Buồng bệnh: B1-B15
-   - Dịch vụ: DV1-DV3
-   - Cấp cứu: CC1, CC2, C1, C2, hoặc có từ "cứu"
-   - Nhiễm: "Nhiễm", "Nhiễm trùng"
-   - Nội soi: NS1, NS2
-   - Hậu phẫu: HP1, HP2
+4️⃣ **⚠️ PHÒNG (roomNumber) - CỰC KỲ QUAN TRỌNG:**
+   **CHỈ được trả về CHÍNH XÁC một trong các giá trị sau (phân biệt hoa thường):**
+   ${validRooms.map(r => `"${r}"`).join(', ')}
 
-   Fallback: roomNumber = "Cấp cứu 1", ward = "Cấp cứu 1"
+   **KHÔNG ĐƯỢC** tự sáng tạo tên phòng khác!
+   **KHÔNG ĐƯỢC** viết "Phòng B4" - chỉ viết "B4"
+   **KHÔNG ĐƯỢC** viết "Buồng B1" - chỉ viết "B1"
 
-5️⃣ **Chẩn đoán (diagnosis):**
+   Nếu không tìm thấy phòng trong input → roomNumber = "Cấp cứu 1"
+
+5️⃣ **⚠️ KHU (ward) - KHÔNG TỰ Ý NHẬP:**
+   **TUYỆT ĐỐI KHÔNG TỰ ĐIỀN ward!**
+   **LUÔN LUÔN để ward = ""** (chuỗi rỗng)
+
+   Lý do: Backend sẽ tự động map đúng ward từ roomNumber theo bảng sau:
+${roomWardMapping}
+
+   Ví dụ:
+   - roomNumber = "B1" → Backend tự set ward = "B1-B4"
+   - roomNumber = "B8" → Backend tự set ward = "Tiền Phẫu"
+   - roomNumber = "Cấp cứu 1" → Backend tự set ward = "Cấp Cứu 1"
+
+6️⃣ **Chẩn đoán (diagnosis):**
    - Tên bệnh: gãy, trật, viêm, u, áp xe, nhiễm trùng...
    - Vị trí: đùi, chân, bàn chân, ngón tay...
    - Viết hoa chữ cái đầu câu
    - Ví dụ: "gãy xương đùi" → "Gãy xương đùi"
 
-6️⃣ **Tình trạng (historySummary):**
+7️⃣ **Tình trạng (historySummary):**
    - Triệu chứng: đau, sưng, đỏ, sốt, khó thở...
    - Diễn biến: tỉnh táo, tiếp xúc tốt, ăn uống được...
 
-7️⃣ **Ngày vào viện (admissionDate):**
+8️⃣ **Ngày vào viện (admissionDate):**
    - Nhận dạng: "23/11", "ngày 23", "hôm nay", "hôm qua"
    - Chuẩn hóa: YYYY-MM-DD
    - Mặc định: ${todayISO}
 
-**VÍ DỤ:**
+**VÍ DỤ ĐÚNG:**
 Input: "1. Anh Tùng 45t, gãy xương đùi, đau nhiều, B1"
-Output: [{"fullName":"Anh Tùng","age":45,"gender":"Nam","roomNumber":"B1","diagnosis":"Gãy xương đùi","historySummary":"Đau nhiều","ward":"Buồng bệnh","admissionDate":"${todayISO}"}]
+Output: [{"fullName":"Anh Tùng","age":45,"gender":"Nam","roomNumber":"B1","ward":"","diagnosis":"Gãy xương đùi","historySummary":"Đau nhiều","admissionDate":"${todayISO}"}]
+
+Input: "Bà Lan 67t, Hậu phẫu"
+Output: [{"fullName":"Bà Lan","age":67,"gender":"Nữ","roomNumber":"Hậu phẫu","ward":"","diagnosis":"","historySummary":"","admissionDate":"${todayISO}"}]
 
 **INPUT TEXT:**
 "${inputText}"
 
-**LƯU Ý:**
+**LƯU Ý QUAN TRỌNG:**
 - LUÔN trả về mảng, dù chỉ có 1 bệnh nhân
-- Không thêm field nào khác ngoài schema
-- Nếu thiếu thông tin → dùng giá trị mặc định`,
+- roomNumber: CHỈ chọn từ danh sách có sẵn, KHÔNG tự sáng tạo
+- ward: LUÔN LUÔN để "" (rỗng), backend sẽ tự động điền
+- Không thêm field nào khác ngoài schema`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -94,8 +116,14 @@ Output: [{"fullName":"Anh Tùng","age":45,"gender":"Nam","roomNumber":"B1","diag
                 }
             }
         });
-        
-        return JSON.parse(response.text || '[]');
+
+        const parsedPatients = JSON.parse(response.text || '[]');
+
+        // CRITICAL: Auto-map ward from roomNumber using the single source of truth
+        return parsedPatients.map((patient: any) => ({
+            ...patient,
+            ward: getWardFromRoom(patient.roomNumber || 'Cấp cứu 1')
+        }));
     } catch (error) {
         console.error("Error parsing patient input:", error);
         return [];
