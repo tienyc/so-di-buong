@@ -97,19 +97,26 @@ const TransferModal: React.FC<TransferModalProps> = ({
                             <div>
                                 <label className="block text-xs font-bold text-gray-400 uppercase mb-2 tracking-wide">Chuyển đến Phòng</label>
                                 <div className="relative">
-                                    <input 
-                                        type="text" 
-                                        list="availableRooms"
-                                        value={targetRoomNumber}
-                                        onChange={(e) => setTargetRoomNumber(e.target.value)}
-                                        className="w-full border-transparent bg-gray-50 rounded-xl p-3.5 focus:ring-2 focus:ring-medical-500 outline-none font-bold"
-                                        placeholder="Nhập hoặc chọn số phòng"
-                                    />
-                                    <datalist id="availableRooms">
-                                        {availableRooms.map(r => (
-                                            <option key={r} value={r} />
-                                        ))}
-                                    </datalist>
+                                    {availableRooms.length > 0 ? (
+                                        <select
+                                            className="w-full border-transparent bg-gray-50 rounded-xl p-3.5 focus:ring-2 focus:ring-medical-500 outline-none font-bold"
+                                            value={targetRoomNumber}
+                                            onChange={(e) => setTargetRoomNumber(e.target.value)}
+                                        >
+                                            <option value="" disabled>Chọn phòng</option>
+                                            {availableRooms.map(r => (
+                                                <option key={r} value={r}>{r}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input 
+                                            type="text" 
+                                            value={targetRoomNumber}
+                                            onChange={(e) => setTargetRoomNumber(e.target.value)}
+                                            className="w-full border-transparent bg-gray-50 rounded-xl p-3.5 focus:ring-2 focus:ring-medical-500 outline-none font-bold"
+                                            placeholder="Nhập hoặc chọn số phòng"
+                                        />
+                                    )}
                                 </div>
                             </div>
                         </div>

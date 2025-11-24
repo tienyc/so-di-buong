@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, OrderType } from './types';
 import { formatForGoogleSheet } from './services/geminiService';
+import { fetchPatients, fetchOrders, savePatient, saveOrder, confirmDischarge, fetchSettings, saveSettings } from './services/api';
+import { buildRoomBlocksFromConfig, WardConfig, SettingsPayload } from './services/sheetMapping';
 import PatientCard from './components/PatientCard';
 import OrderModal from './components/OrderModal';
 import TransferModal from './components/TransferModal';
@@ -32,7 +34,7 @@ const removeVietnameseTones = (str: string) => {
 
 const App: React.FC = () => {
     // --- State with Persistence ---
-    const STORAGE_KEY_PREFIX = 'smartround_v4_'; // Bump version
+    const STORAGE_KEY_PREFIX = 'smartround_v5_'; // Bump version to force clear old data
 
     // Load Doctors
     const [doctors, setDoctors] = useState<string[]>(() => {
@@ -91,7 +93,17 @@ const App: React.FC = () => {
         return localStorage.getItem(`${STORAGE_KEY_PREFIX}sheet_url`) || '';
     });
 
+    const [wardConfigs, setWardConfigs] = useState<WardConfig[]>([]);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const [configDirty, setConfigDirty] = useState(false);
+    const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+    const markConfigDirty = () => setConfigDirty(true);
+
     const [currentView, setCurrentView] = useState<AppView>(AppView.WARD_ROUND);
+    const [isLoadingPatients, setIsLoadingPatients] = useState(true);
+    const [apiError, setApiError] = useState<string | null>(null);
+    const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     
     // Filtering States
     const [selectedRoomBlockId, setSelectedRoomBlockId] = useState<string>(''); // Filter by "Khu" (Empty = All)
@@ -129,32 +141,52 @@ const App: React.FC = () => {
         const initialExpanded: {[key: string]: boolean} = {};
         rooms.forEach(r => initialExpanded[r.id] = true);
         setExpandedBlocks(initialExpanded);
+    }, []);
 
-        // Initialize mock patients if completely empty (for first time demo)
-        const totalP = rooms.reduce((acc, r) => acc + r.patients.length, 0);
-        if (totalP === 0 && rooms[0]?.id === '1') {
-            // Set surgery date to future for mock patient to avoid auto-severe status (Post-op day 0)
-            const futureDate = new Date();
-            futureDate.setDate(futureDate.getDate() + 5);
+    useEffect(() => {
+        let isActive = true;
+        const loadFromApi = async () => {
+            setIsLoadingPatients(true);
+            try {
+                const settings = await fetchSettings();
+                if (!isActive) return;
+                setDoctors(settings.doctors);
+                setOperatingRooms(settings.operatingRooms);
+                setAnesthesiaMethods(settings.anesthesiaMethods);
+                setSurgeryClassifications(settings.surgeryClassifications);
+                setSurgeryRequirements(settings.surgeryRequirements);
+                setWardConfigs(settings.wards);
+                setRooms(buildRoomBlocksFromConfig([], settings.wards));
+                setSettingsLoaded(true);
+                setConfigDirty(false);
 
-            setRooms(prev => prev.map(r => r.id === '1' ? {
-                ...r,
-                patients: [
-                    {
-                        id: 'p1', fullName: 'Nguyễn Văn An', age: 45, gender: 'Nam', roomNumber: '101', bedNumber: '1',
-                        admissionDate: new Date().toISOString().split('T')[0], diagnosis: 'Viêm ruột thừa cấp',
-                        historySummary: 'Đau bụng hố chậu phải 2 ngày. Tiền sử khỏe mạnh.',
-                        orders: [], isScheduledForSurgery: true, surgeryDate: futureDate.toISOString().split('T')[0], surgeryTime: '10:00', status: PatientStatus.ACTIVE, isSevere: false
-                    },
-                    {
-                        id: 'p2', fullName: 'Lê Thị Bình', age: 62, gender: 'Nữ', roomNumber: '101', bedNumber: '2',
-                        admissionDate: new Date().toISOString().split('T')[0], roomEntryDate: new Date().toISOString().split('T')[0], diagnosis: 'Sỏi túi mật',
-                        historySummary: 'Đau hạ sườn phải, ăn kém. Đái tháo đường type 2.',
-                        orders: [], isScheduledForSurgery: false, status: PatientStatus.ACTIVE, isSevere: false
+                const patients = await fetchPatients();
+                const enriched = await Promise.all(patients.map(async (patient) => {
+                    try {
+                        const orders = await fetchOrders(patient.id);
+                        return { ...patient, orders };
+                    } catch (error) {
+                        console.error('Không lấy được y lệnh cho bệnh nhân', patient.id, error);
+                        return { ...patient, orders: [] };
                     }
-                ]
-            } : r));
-        }
+                }));
+                if (!isActive) return;
+                setRooms(buildRoomBlocksFromConfig(enriched, settings.wards));
+                setApiError(null);
+                setNotification({ message: 'Đã đồng bộ dữ liệu từ Google Sheet', type: 'success' });
+            } catch (error) {
+                console.error('Lỗi khi tải dữ liệu từ API:', error);
+                if (isActive) {
+                    setApiError((error as Error)?.message || 'Không tải được dữ liệu từ Google Sheet');
+                }
+            } finally {
+                if (isActive) setIsLoadingPatients(false);
+            }
+        };
+        loadFromApi();
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     // --- Derived Data ---
@@ -178,76 +210,203 @@ const App: React.FC = () => {
         return Array.from(new Set([...defined, ...patientRooms])).sort();
     }, [currentBlock]);
 
+    useEffect(() => {
+        if (!notification) return;
+        const timeout = setTimeout(() => setNotification(null), 4000);
+        return () => clearTimeout(timeout);
+    }, [notification]);
+
+    const deriveWardConfigsFromRooms = (): WardConfig[] => rooms.map(block => ({
+        id: block.id,
+        name: block.name,
+        rooms: block.definedRooms || [],
+    }));
+
+    useEffect(() => {
+        if (!settingsLoaded || !configDirty || isSavingSettings) return;
+        const payload: SettingsPayload = {
+            doctors,
+            operatingRooms,
+            anesthesiaMethods,
+            surgeryClassifications,
+            surgeryRequirements,
+            wards: deriveWardConfigsFromRooms(),
+        };
+        setIsSavingSettings(true);
+        saveSettings(payload)
+            .then(() => {
+                setConfigDirty(false);
+                setNotification({ message: 'Cấu hình đã được đồng bộ', type: 'success' });
+            })
+            .catch((error) => {
+                console.error('Lưu cấu hình thất bại', error);
+                setApiError((error as Error)?.message || 'Lưu cấu hình thất bại');
+                setNotification({ message: 'Lưu cấu hình thất bại', type: 'error' });
+            })
+            .finally(() => setIsSavingSettings(false));
+    }, [configDirty, settingsLoaded, doctors, operatingRooms, anesthesiaMethods, surgeryClassifications, surgeryRequirements, rooms, isSavingSettings]);
+    
 
     // --- Logic Handlers ---
 
-    const handleAddPatients = (newPatients: Patient[], targetBlockId?: string) => {
+    const replacePatientInState = (patient: Patient) => {
+        setRooms(prev => prev.map(block => ({
+            ...block,
+            patients: block.patients.map(p => p.id === patient.id ? patient : p)
+        })));
+    };
+
+    const replaceOrderInState = (patientId: string, order: MedicalOrder) => {
+        setRooms(prev => prev.map(block => ({
+            ...block,
+            patients: block.patients.map(p => {
+                if (p.id !== patientId) return p;
+                return {
+                    ...p,
+                    orders: p.orders.map(o => o.id === order.id ? order : o)
+                };
+            })
+        })));
+    };
+
+    const handleAddPatients = async (newPatients: Patient[], targetBlockId?: string) => {
         const blockId = targetBlockId || selectedRoomBlockId || rooms[0]?.id;
         if (!blockId) return;
 
-        const updatedRooms = rooms.map(block => {
-            if (block.id === blockId) {
-                return { ...block, patients: [...block.patients, ...newPatients] };
+        const targetBlock = rooms.find(block => block.id === blockId);
+        const blockName = targetBlock?.name || newPatients[0]?.ward || 'Chưa xác định';
+        const normalizedPatients = newPatients.map(patient => ({
+            ...patient,
+            ward: patient.ward || blockName
+        }));
+
+        setRooms(prev => {
+            let blockExists = false;
+            const updated = prev.map(block => {
+                if (block.id === blockId) {
+                    blockExists = true;
+                    return {
+                        ...block,
+                        patients: [...block.patients, ...normalizedPatients]
+                    };
+                }
+                return block;
+            });
+            if (!blockExists) {
+                updated.push({
+                    id: blockId,
+                    name: blockName,
+                    definedRooms: Array.from(new Set(normalizedPatients.map(p => p.roomNumber).filter(Boolean))),
+                    patients: [...normalizedPatients]
+                });
             }
-            return block;
+            return updated;
         });
-        setRooms(updatedRooms);
         setIsAddPatientModalOpen(false);
+
+        try {
+            const saved = await Promise.all(normalizedPatients.map(patient => savePatient(patient)));
+            saved.forEach(replacePatientInState);
+            setNotification({ message: 'Đã lưu bệnh nhân mới thành công', type: 'success' });
+        } catch (error) {
+            console.error('Lỗi khi lưu bệnh nhân mới:', error);
+            setNotification({ message: 'Lưu bệnh nhân mới thất bại', type: 'error' });
+        }
     };
 
     const handleUpdatePatient = (id: string, updates: Partial<Patient>) => {
-        const updatedRooms = rooms.map(block => ({
-            ...block,
-            patients: block.patients.map(p => p.id === id ? { ...p, ...updates } : p)
-        }));
-        setRooms(updatedRooms);
-    };
-
-    const handleAddOrder = (orderData: Omit<MedicalOrder, 'id'>, isDischargeOrder?: boolean, dischargeDate?: string) => {
-        if (!selectedPatientId) return;
-        
+        let updatedPatient: Patient | null = null;
         const updatedRooms = rooms.map(block => ({
             ...block,
             patients: block.patients.map(p => {
-                if (p.id === selectedPatientId) {
-                    const newOrder: MedicalOrder = {
-                        ...orderData,
-                        id: Math.random().toString(36).substr(2, 9)
-                    };
-                    
-                    const updates: Partial<Patient> = { orders: [newOrder, ...p.orders] };
-                    
-                    // If it's a planned discharge order, update the discharge date on patient
-                    if (isDischargeOrder && dischargeDate) {
-                        updates.dischargeDate = dischargeDate;
-                    }
-
-                    return { ...p, ...updates };
+                if (p.id === id) {
+                    updatedPatient = { ...p, ...updates };
+                    return updatedPatient;
                 }
                 return p;
             })
         }));
         setRooms(updatedRooms);
+        if (updatedPatient) {
+            savePatient(updatedPatient).catch(error => {
+                console.error('Lưu thông tin bệnh nhân thất bại', error);
+            });
+        }
+    };
+
+    const handleAddOrder = async (orderData: Omit<MedicalOrder, 'id'>, isDischargeOrder?: boolean, dischargeDate?: string) => {
+        if (!selectedPatientId) return;
+        
+        const newOrder: MedicalOrder = {
+            ...orderData,
+            id: Math.random().toString(36).substr(2, 9)
+        };
+        let updatedPatient: Patient | null = null;
+        const updatedRooms = rooms.map(block => ({
+            ...block,
+            patients: block.patients.map(p => {
+                if (p.id === selectedPatientId) {
+                    const updates: Partial<Patient> = { orders: [newOrder, ...p.orders] };
+                    if (isDischargeOrder && dischargeDate) {
+                        updates.dischargeDate = dischargeDate;
+                    }
+                    updatedPatient = { ...p, ...updates };
+                    return updatedPatient;
+                }
+                return p;
+            })
+        }));
+        setRooms(updatedRooms);
+
+        if (updatedPatient) {
+            savePatient(updatedPatient).catch(error => {
+                console.error('Lưu bệnh nhân sau y lệnh thất bại', error);
+            });
+        }
+
+        try {
+            const savedOrder = await saveOrder(newOrder);
+            replaceOrderInState(selectedPatientId, savedOrder);
+            setNotification({ message: 'Y lệnh đã được lưu', type: 'success' });
+        } catch (error) {
+            console.error('Lưu y lệnh thất bại', error);
+            setNotification({ message: 'Lưu y lệnh thất bại', type: 'error' });
+        }
     };
 
     const handleToggleCompleteOrder = (patientId: string, orderId: string) => {
+        let updatedOrder: MedicalOrder | null = null;
         const updatedRooms = rooms.map(block => ({
             ...block,
             patients: block.patients.map(p => {
                 if (p.id === patientId) {
                     return {
                         ...p,
-                        orders: p.orders.map(o => 
-                            o.id === orderId 
-                            ? { ...o, status: o.status === OrderStatus.COMPLETED ? OrderStatus.PENDING : OrderStatus.COMPLETED }
-                            : o
-                        )
+                        orders: p.orders.map(o => {
+                            if (o.id === orderId) {
+                                updatedOrder = {
+                                    ...o,
+                                    status: o.status === OrderStatus.COMPLETED ? OrderStatus.PENDING : OrderStatus.COMPLETED
+                                };
+                                return updatedOrder;
+                            }
+                            return o;
+                        })
                     };
                 }
                 return p;
             })
         }));
         setRooms(updatedRooms);
+
+        if (updatedOrder) {
+            saveOrder(updatedOrder)
+                .then(() => setNotification({ message: 'Cập nhật y lệnh hoàn tất', type: 'success' }))
+                .catch(error => {
+                    console.error('Cập nhật y lệnh thất bại', error);
+                    setNotification({ message: 'Cập nhật y lệnh thất bại', type: 'error' });
+                });
+        }
     };
 
     const handleToggleSurgery = (id: string) => {
@@ -262,43 +421,43 @@ const App: React.FC = () => {
     const handleTransferConfirm = (targetRoomId?: string, targetRoomNumber?: string, notes?: string, date?: string) => {
         if (!selectedPatientId) return;
 
-        // Transfer Logic
         if (transferMode === 'TRANSFER' && targetRoomId) {
-             let pToMove: Patient | undefined;
-             
-             // 1. Find and remove patient from old block
-             const step1 = rooms.map(b => {
-                 const found = b.patients.find(p => p.id === selectedPatientId);
-                 if (found) {
-                     pToMove = found;
-                     return { ...b, patients: b.patients.filter(p => p.id !== selectedPatientId) };
-                 }
-                 return b;
-             });
-             
-             // 2. Add to new block with updated room number
-             if (pToMove && targetRoomId) {
-                 const step2 = step1.map(b => {
-                     if (b.id === targetRoomId) {
-                         const movedPatient = { 
-                             ...pToMove!, 
-                             roomEntryDate: new Date().toISOString().split('T')[0],
-                             roomNumber: targetRoomNumber || pToMove!.roomNumber // Update room number if provided
-                         };
-                         return { ...b, patients: [...b.patients, movedPatient] };
-                     }
-                     return b;
-                 });
-                 setRooms(step2);
-             }
-        } else {
-            // Discharge Logic (Set Date)
-             const step1 = rooms.map(b => ({
-                 ...b,
-                 patients: b.patients.map(p => p.id === selectedPatientId ? { ...p, dischargeDate: date } : p)
-             }));
-             setRooms(step1);
+            let pToMove: Patient | undefined;
+            const targetBlock = rooms.find(b => b.id === targetRoomId);
+
+            const step1 = rooms.map(b => {
+                const found = b.patients.find(p => p.id === selectedPatientId);
+                if (found) {
+                    pToMove = found;
+                    return { ...b, patients: b.patients.filter(p => p.id !== selectedPatientId) };
+                }
+                return b;
+            });
+
+            if (pToMove) {
+                const movedPatient = {
+                    ...pToMove,
+                    roomEntryDate: new Date().toISOString().split('T')[0],
+                    roomNumber: targetRoomNumber || pToMove.roomNumber,
+                    ward: targetBlock?.name || pToMove.ward
+                };
+                const step2 = step1.map(b => {
+                    if (b.id === targetRoomId) {
+                        return { ...b, patients: [...b.patients, movedPatient] };
+                    }
+                    return b;
+                });
+                setRooms(step2);
+            savePatient(movedPatient)
+                .then(() => setNotification({ message: 'Chuyển phòng đã được lưu', type: 'success' }))
+                .catch(error => {
+                    console.error('Lưu bệnh nhân sau chuyển phòng thất bại', error);
+                    setNotification({ message: 'Lưu chuyển phòng thất bại', type: 'error' });
+                });
         }
+    } else {
+        handleUpdatePatient(selectedPatientId, { dischargeDate: date });
+    }
     };
 
     // Actual final confirmation to archive patient
@@ -309,6 +468,13 @@ const App: React.FC = () => {
                 patients: block.patients.map(p => p.id === id ? { ...p, status: PatientStatus.ARCHIVED } : p) // Change to ARCHIVED to hide
             }));
             setRooms(updatedRooms);
+            const dischargeDate = new Date().toISOString().split('T')[0];
+            confirmDischarge(id, dischargeDate)
+                .then(() => setNotification({ message: 'Xác nhận ra viện thành công', type: 'success' }))
+                .catch(error => {
+                    console.error('Xác nhận ra viện thất bại', error);
+                    setNotification({ message: 'Xác nhận ra viện thất bại', type: 'error' });
+                });
         }
     }
 
@@ -468,21 +634,34 @@ const App: React.FC = () => {
                 )}
             </header>
 
+            {isLoadingPatients && (
+                <div className="px-4 py-2 text-center text-xs text-medical-600">Đang đồng bộ dữ liệu từ Google Sheet...</div>
+            )}
+            {apiError && (
+                <div className="px-4 py-1 text-center text-xs text-red-600">{apiError}</div>
+            )}
+            {notification && (
+                <div className={`mx-4 my-2 px-4 py-2 text-xs font-semibold rounded-2xl border ${notification.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                    {notification.message}
+                </div>
+            )}
+
             {/* Main Content */}
             <main className="flex-1 px-4 pt-4 pb-28 overflow-y-auto max-w-2xl mx-auto w-full">
                 
                 {/* Settings View */}
                 {currentView === AppView.SETTINGS && (
-                    <SettingsView 
-                        doctors={doctors} 
-                        onUpdateDoctors={setDoctors}
-                        rooms={rooms}
-                        onUpdateRooms={setRooms}
-                        sheetUrl={sheetUrl}
-                        onUpdateSheetUrl={setSheetUrl}
-                        // New Props
-                        operatingRooms={operatingRooms}
-                        onUpdateOperatingRooms={setOperatingRooms}
+                <SettingsView 
+                    doctors={doctors} 
+                    onUpdateDoctors={setDoctors}
+                    rooms={rooms}
+                    onUpdateRooms={setRooms}
+                    sheetUrl={sheetUrl}
+                    onUpdateSheetUrl={setSheetUrl}
+                    onConfigChange={markConfigDirty}
+                    // New Props
+                    operatingRooms={operatingRooms}
+                    onUpdateOperatingRooms={setOperatingRooms}
                         anesthesiaMethods={anesthesiaMethods}
                         onUpdateAnesthesiaMethods={setAnesthesiaMethods}
                         surgeryClassifications={surgeryClassifications}

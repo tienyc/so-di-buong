@@ -14,6 +14,8 @@ interface AddPatientModalProps {
 const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAddPatients, rooms }) => {
     const [activeTab, setActiveTab] = useState<'MANUAL' | 'AI'>('MANUAL');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [aiPreview, setAiPreview] = useState<Patient[] | null>(null);
+    const [aiError, setAiError] = useState<string | null>(null);
     
     // AI State
     const [importText, setImportText] = useState('');
@@ -51,6 +53,9 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         e.preventDefault();
         if (!manualForm.fullName || !manualForm.roomNumber || !manualForm.selectedBlockId) return;
 
+        const assignedBlock = rooms.find(r => r.id === manualForm.selectedBlockId);
+        const wardName = assignedBlock?.name || 'Chưa xác định';
+
         const newPatient: Patient = {
             id: Math.random().toString(36).substr(2, 9),
             fullName: manualForm.fullName!,
@@ -65,7 +70,8 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
             orders: [],
             isScheduledForSurgery: false,
             status: PatientStatus.ACTIVE,
-            isSevere: manualForm.isSevere || false
+            isSevere: manualForm.isSevere || false,
+            ward: wardName
         };
 
         onAddPatients([newPatient], manualForm.selectedBlockId); 
@@ -81,33 +87,45 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         onClose();
     };
 
+    const FALLBACK_WARD = 'Cấp cứu 1';
+    const FALLBACK_ROOM = 'Cấp cứu 1';
+
     const handleAIImport = async () => {
         if (!importText.trim()) return;
         setIsProcessing(true);
         const parsedPatients = await parsePatientInput(importText);
         
         if (parsedPatients && parsedPatients.length > 0) {
+            const baseWard = rooms[0]?.name || 'Chưa xác định';
             const newPatients: Patient[] = parsedPatients.map((p: any) => ({
                 id: Math.random().toString(36).substr(2, 9),
                 fullName: p.fullName,
                 age: p.age || 0,
                 gender: 'Nam',
-                roomNumber: p.roomNumber || '?',
+                roomNumber: p.roomNumber || FALLBACK_ROOM,
                 bedNumber: '',
-                admissionDate: new Date().toISOString().split('T')[0],
-                roomEntryDate: new Date().toISOString().split('T')[0],
-                diagnosis: p.diagnosis,
+                admissionDate: p.admissionDate || new Date().toISOString().split('T')[0],
+                roomEntryDate: p.roomEntryDate || new Date().toISOString().split('T')[0],
+                diagnosis: p.diagnosis || 'Chưa có chẩn đoán',
                 historySummary: p.historySummary || 'Chưa có thông tin chi tiết',
                 orders: [],
                 isScheduledForSurgery: false,
                 status: PatientStatus.ACTIVE,
-                isSevere: false
+                isSevere: false,
+                ward: p.ward || baseWard || FALLBACK_WARD
             }));
-            onAddPatients(newPatients); 
-            setImportText('');
-            onClose();
+            setAiPreview(newPatients);
+            setAiError(null);
         }
         setIsProcessing(false);
+    };
+
+    const handleAcceptAi = () => {
+        if (!aiPreview?.length) return;
+        onAddPatients(aiPreview);
+        setAiPreview(null);
+        setImportText('');
+        onClose();
     };
 
     return (
@@ -185,20 +203,30 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 uppercase mb-2 tracking-wide">Phòng *</label>
-                                    <div className="relative">
+                                <div className="relative">
+                                    {availableRooms.length > 0 ? (
+                                        <select
+                                            required
+                                            className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 font-bold text-slate-700"
+                                            value={manualForm.roomNumber || ''}
+                                            onChange={e => handleManualChange('roomNumber', e.target.value)}
+                                        >
+                                            <option value="" disabled>Chọn phòng...</option>
+                                            {availableRooms.map(room => (
+                                                <option key={room} value={room}>{room}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
                                         <input 
                                             required 
                                             type="text" 
-                                            list="roomSuggestions"
                                             className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 font-bold text-slate-700"
                                             value={manualForm.roomNumber || ''} 
                                             onChange={e => handleManualChange('roomNumber', e.target.value)} 
                                             placeholder="Số phòng..."
                                         />
-                                        <datalist id="roomSuggestions">
-                                            {availableRooms.map(r => <option key={r} value={r} />)}
-                                        </datalist>
-                                    </div>
+                                    )}
+                                </div>
                                 </div>
                             </div>
 
@@ -245,12 +273,31 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                     💡 <span className="font-bold">Mẹo:</span> Copy tin nhắn bàn giao hoặc chụp ảnh danh sách bệnh nhân (Text Scan) rồi dán vào đây. AI sẽ tự động tách tên, tuổi, chẩn đoán.
                                 </p>
                             </div>
-                            <textarea 
-                                className="w-full bg-gray-50 border-transparent rounded-2xl p-4 h-48 focus:bg-white focus:ring-2 focus:ring-medical-500 outline-none text-sm leading-relaxed"
-                                placeholder="VD: 1. Nguyễn Văn A, 50t, Viêm phổi. P101. 2. Trần Thị B, Sỏi thận..."
-                                value={importText}
-                                onChange={(e) => setImportText(e.target.value)}
-                            />
+                    <textarea 
+                        className="w-full bg-gray-50 border-transparent rounded-2xl p-4 h-48 focus:bg-white focus:ring-2 focus:ring-medical-500 outline-none text-sm leading-relaxed"
+                        placeholder="VD: 1. Nguyễn Văn A, 50t, Viêm phổi. Khu B3, P301..."
+                        value={importText}
+                        onChange={(e) => setImportText(e.target.value)}
+                    />
+                    {aiPreview && (
+                        <div className="mt-4 bg-white rounded-2xl border border-blue-100 p-4 space-y-3">
+                            <div className="flex justify-between items-center">
+                                <h4 className="font-bold text-sm text-blue-700">Dự đoán từ AI</h4>
+                                <button onClick={() => setAiPreview(null)} className="text-xs text-blue-500">Đóng</button>
+                            </div>
+                            {aiPreview.map(p => (
+                                <div key={p.id} className="text-sm text-slate-600">
+                                    <div className="font-semibold text-slate-800">{p.fullName}</div>
+                                    <div className="text-xs text-slate-500">{p.age} tuổi · {p.diagnosis}</div>
+                                    <div className="text-xs text-slate-500">Khu: {p.ward} · Phòng: {p.roomNumber}</div>
+                                </div>
+                            ))}
+                            <div className="flex gap-2">
+                                <button type="button" onClick={handleAcceptAi} className="flex-1 bg-blue-500 text-white rounded-xl py-2 text-sm font-bold">Chấp nhận</button>
+                                <button type="button" onClick={() => setAiPreview(null)} className="flex-1 bg-gray-100 rounded-xl py-2 text-sm font-bold text-slate-600">Chỉnh tay</button>
+                            </div>
+                        </div>
+                    )}
                             <button 
                                 onClick={handleAIImport} 
                                 disabled={isProcessing || !importText.trim()}

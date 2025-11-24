@@ -41,6 +41,7 @@ export interface Patient {
     fullName: string;
     age: number;
     gender: 'Nam' | 'Nữ';
+    ward?: string;
     admissionDate: string; // Used to calc duration
     roomEntryDate?: string; // New: Date entered this specific room (for "New Patient" highlight)
     diagnosis: string;
@@ -49,6 +50,7 @@ export interface Patient {
     
     // Surgery Info
     isScheduledForSurgery: boolean;
+    isRegisteredForSurgery?: boolean;
     surgeryNotes?: string;
     surgeryDate?: string;
     surgeryTime?: string; // e.g., "09:30"

@@ -10,6 +10,7 @@ interface SettingsViewProps {
     onUpdateRooms: (rooms: RoomBlock[]) => void;
     sheetUrl?: string;
     onUpdateSheetUrl?: (url: string) => void;
+    onConfigChange?: () => void;
     
     // New Config Props
     operatingRooms?: string[];
@@ -29,7 +30,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     operatingRooms = [], onUpdateOperatingRooms,
     anesthesiaMethods = [], onUpdateAnesthesiaMethods,
     surgeryClassifications = [], onUpdateSurgeryClassifications,
-    surgeryRequirements = [], onUpdateSurgeryRequirements
+    surgeryRequirements = [], onUpdateSurgeryRequirements,
+    onConfigChange
 }) => {
     const [newDoctor, setNewDoctor] = useState('');
     const [newBlockName, setNewBlockName] = useState('');
@@ -39,11 +41,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     // Generic list state helpers
     const [newItemText, setNewItemText] = useState('');
     const [activeConfigTab, setActiveConfigTab] = useState<string | null>(null);
+    const notifyConfigChange = () => { onConfigChange && onConfigChange(); };
 
     const handleAddDoctor = () => {
         if (newDoctor.trim()) {
             onUpdateDoctors([...doctors, newDoctor.trim()]);
             setNewDoctor('');
+            notifyConfigChange();
         }
     };
 
@@ -51,6 +55,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         const newDocs = [...doctors];
         newDocs.splice(index, 1);
         onUpdateDoctors(newDocs);
+        notifyConfigChange();
     };
 
     const handleAddBlock = () => {
@@ -63,6 +68,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
             };
             onUpdateRooms([...rooms, newBlock]);
             setNewBlockName('');
+            notifyConfigChange();
         }
     };
 
@@ -74,6 +80,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         }
         if (window.confirm('Bạn có chắc chắn muốn xóa khu vực này?')) {
             onUpdateRooms(rooms.filter(r => r.id !== id));
+            notifyConfigChange();
         }
     };
 
@@ -89,7 +96,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({
             return block;
         });
         onUpdateRooms(updatedRooms);
+        notifyConfigChange();
         setNewRoomNumber('');
+        notifyConfigChange();
     };
 
     const handleRemoveRoomFromBlock = (blockId: string, roomNum: string) => {
@@ -107,6 +116,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         if (newItemText.trim()) {
             updater([...list, newItemText.trim()]);
             setNewItemText('');
+            notifyConfigChange();
         }
     };
 
@@ -114,6 +124,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         const newList = [...list];
         newList.splice(index, 1);
         updater(newList);
+        notifyConfigChange();
     };
 
     const renderConfigSection = (
