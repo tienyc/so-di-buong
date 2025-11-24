@@ -128,6 +128,32 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         onClose();
     };
 
+    const handleEditManually = () => {
+        if (!aiPreview?.length) return;
+
+        // Take the first patient from AI preview and populate manual form
+        const firstPatient = aiPreview[0];
+        const targetBlock = rooms.find(r => r.name === firstPatient.ward) || rooms[0];
+
+        setManualForm({
+            fullName: firstPatient.fullName,
+            age: firstPatient.age,
+            gender: firstPatient.gender,
+            roomNumber: firstPatient.roomNumber,
+            diagnosis: firstPatient.diagnosis,
+            historySummary: firstPatient.historySummary,
+            admissionDate: firstPatient.admissionDate,
+            isSevere: firstPatient.isSevere,
+            status: firstPatient.status,
+            selectedBlockId: targetBlock?.id
+        });
+
+        // Clear AI state and switch to manual tab
+        setAiPreview(null);
+        setImportText('');
+        setActiveTab('MANUAL');
+    };
+
     return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in zoom-in-95 duration-200">
             <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] ring-1 ring-black/5">
@@ -294,7 +320,7 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                             ))}
                             <div className="flex gap-2">
                                 <button type="button" onClick={handleAcceptAi} className="flex-1 bg-blue-500 text-white rounded-xl py-2 text-sm font-bold">Chấp nhận</button>
-                                <button type="button" onClick={() => setAiPreview(null)} className="flex-1 bg-gray-100 rounded-xl py-2 text-sm font-bold text-slate-600">Chỉnh tay</button>
+                                <button type="button" onClick={handleEditManually} className="flex-1 bg-gray-100 rounded-xl py-2 text-sm font-bold text-slate-600 hover:bg-gray-200 transition-colors">Chỉnh tay</button>
                             </div>
                         </div>
                     )}
