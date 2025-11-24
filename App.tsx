@@ -315,6 +315,24 @@ const App: React.FC = () => {
         try {
             await Promise.all(normalizedPatients.map(patient => savePatient(patient)));
             setNotification({ message: 'Đã lưu bệnh nhân mới thành công', type: 'success' });
+
+            // Auto-sync surgery info for new patients with surgery schedule
+            const patientsWithSurgery = normalizedPatients.filter(p => p.surgeryDate && p.surgeryTime);
+            if (patientsWithSurgery.length > 0) {
+                for (const patient of patientsWithSurgery) {
+                    try {
+                        const result = await syncSurgeryToKhoa(patient);
+                        if (result.success) {
+                            console.log('Synced surgery for new patient:', patient.fullName);
+                        } else {
+                            console.error('Failed to sync surgery for new patient:', result.error);
+                        }
+                    } catch (syncError) {
+                        console.error('Error syncing surgery for new patient:', syncError);
+                    }
+                }
+                setNotification({ message: `Đã lưu ${normalizedPatients.length} bệnh nhân và đồng bộ ${patientsWithSurgery.length} lịch mổ`, type: 'success' });
+            }
         } catch (error) {
             console.error('Lỗi khi lưu bệnh nhân mới:', error);
             setNotification({ message: 'Lưu bệnh nhân mới thất bại', type: 'error' });
