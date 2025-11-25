@@ -6,28 +6,28 @@ export interface RawPatient {
     id: string;
     fullName: string;
     age: SheetValue;
-    gender: 'Nam' | 'Nữ';
+    gender: string;
     ward: string;
     roomNumber: string;
-    bedNumber: string;
+    bedNumber?: string;
     admissionDate: string;
     roomEntryDate?: string;
     diagnosis: string;
-    historySummary: string;
+    clinicalNote?: string;
     isSevere?: SheetValue;
     status: string;
-    dischargeDate?: string;
-    surgeonName?: string;
+    plannedDischargeDate?: string;
+    dischargeConfirmed?: SheetValue;
+    actualDischargeDate?: string;
+    isScheduledForSurgery?: SheetValue;  // ✅ Sửa: Khớp với tên cột trong sheet
     surgeryDate?: string;
     surgeryTime?: string;
-    surgeryMethod?: string;
     operatingRoom?: string;
+    surgeryMethod?: string;
     anesthesiaMethod?: string;
+    surgeonName?: string;
     surgeryClassification?: string;
     surgeryRequirements?: string;
-    surgeryNotes?: string;
-    isScheduledForSurgery?: SheetValue;
-    isRegisteredForSurgery?: SheetValue;
 }
 
 export interface RawOrder {
@@ -71,34 +71,41 @@ const normalizeOrderStatus = (value?: string): OrderStatus => {
     return match || OrderStatus.PENDING;
 };
 
-export const mapRawPatient = (raw: RawPatient): Patient => ({
-    id: raw.id,
-    fullName: raw.fullName,
-    age: parseNumber(raw.age),
-    gender: raw.gender === 'Nữ' ? 'Nữ' : 'Nam',
-    ward: raw.ward,
-    roomNumber: raw.roomNumber,
-    bedNumber: raw.bedNumber,
-    admissionDate: raw.admissionDate,
-    roomEntryDate: raw.roomEntryDate,
-    diagnosis: raw.diagnosis,
-    historySummary: raw.historySummary,
-    orders: [],
-    isScheduledForSurgery: parseBoolean(raw.isScheduledForSurgery),
-    isRegisteredForSurgery: parseBoolean(raw.isRegisteredForSurgery),
-    surgeryNotes: raw.surgeryNotes,
-    surgeryDate: raw.surgeryDate,
-    surgeryTime: raw.surgeryTime,
-    surgeryMethod: raw.surgeryMethod,
-    surgeonName: raw.surgeonName,
-    operatingRoom: raw.operatingRoom,
-    anesthesiaMethod: raw.anesthesiaMethod,
-    surgeryClassification: raw.surgeryClassification,
-    surgeryRequirements: raw.surgeryRequirements,
-    isSevere: parseBoolean(raw.isSevere),
-    status: normalizePatientStatus(raw.status),
-    dischargeDate: raw.dischargeDate,
-});
+export const mapRawPatient = (raw: RawPatient): Patient => {
+    const hasSurgeryDate = !!raw.surgeryDate && raw.surgeryDate.trim() !== '';
+    // ✅ Nếu có ngày mổ, bệnh nhân sẽ luôn được coi là đã đăng ký mổ.
+    // Ngược lại, sẽ dùng giá trị từ cột trong sheet.
+    const isScheduled = hasSurgeryDate || parseBoolean(raw.isScheduledForSurgery);
+
+    return {
+        id: raw.id,
+        fullName: raw.fullName,
+        age: parseNumber(raw.age),
+        gender: raw.gender === 'Nữ' ? 'Nữ' : 'Nam',
+        ward: raw.ward,
+        roomNumber: raw.roomNumber,
+        bedNumber: raw.bedNumber || '',
+        admissionDate: raw.admissionDate,
+        roomEntryDate: raw.roomEntryDate,
+        diagnosis: raw.diagnosis,
+        historySummary: raw.clinicalNote || '',
+        orders: [],
+        isScheduledForSurgery: isScheduled,
+        isRegisteredForSurgery: isScheduled,
+        surgeryNotes: '',
+        surgeryDate: isScheduled ? (raw.surgeryDate || '') : '',  // ✅ Chỉ giữ ngày mổ nếu bệnh nhân đã đăng ký
+        surgeryTime: isScheduled ? (raw.surgeryTime || '') : '',  // ✅ Chỉ giữ giờ mổ nếu bệnh nhân đã đăng ký
+        surgeryMethod: raw.surgeryMethod,
+        surgeonName: raw.surgeonName,
+        operatingRoom: raw.operatingRoom,
+        anesthesiaMethod: raw.anesthesiaMethod,
+        surgeryClassification: raw.surgeryClassification,
+        surgeryRequirements: raw.surgeryRequirements,
+        isSevere: parseBoolean(raw.isSevere),
+        status: normalizePatientStatus(raw.status),
+        dischargeDate: raw.plannedDischargeDate || raw.actualDischargeDate,
+    };
+};
 
 export const mapRawOrder = (raw: RawOrder): MedicalOrder => ({
     id: raw.id,
@@ -178,6 +185,32 @@ export const buildRoomBlocksFromConfig = (patients: Patient[], wards: WardConfig
     map.forEach(block => ordered.push(block));
     return ordered;
 };
+
+export const serializePatientToRaw = (patient: Patient) => ({
+    id: patient.id,
+    fullName: patient.fullName,
+    age: patient.age,
+    gender: patient.gender,
+    ward: patient.ward,
+    roomNumber: patient.roomNumber,
+    bedNumber: patient.bedNumber || '',
+    admissionDate: patient.admissionDate,
+    roomEntryDate: patient.roomEntryDate || '',
+    diagnosis: patient.diagnosis,
+    clinicalNote: patient.historySummary || '',
+    isSevere: patient.isSevere ? 'TRUE' : '',
+    status: patient.status,
+    plannedDischargeDate: patient.dischargeDate || '',
+    isScheduledForSurgery: patient.isScheduledForSurgery ? 'TRUE' : '',  // ✅ Sửa: Khớp với tên cột trong sheet
+    surgeryDate: patient.surgeryDate || '',
+    surgeryTime: patient.surgeryTime || '',
+    operatingRoom: patient.operatingRoom || '',
+    surgeryMethod: patient.surgeryMethod || '',
+    anesthesiaMethod: patient.anesthesiaMethod || '',
+    surgeonName: patient.surgeonName || '',
+    surgeryClassification: patient.surgeryClassification || '',
+    surgeryRequirements: patient.surgeryRequirements || ''
+});
 
 // ================= CONFIG HELPERS =================
 

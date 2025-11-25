@@ -28,11 +28,11 @@ const isAutoSyncEnabled = (): boolean => {
  * Sync single patient's surgery info to department sheet
  */
 export const syncSurgeryToKhoa = async (patient: Patient): Promise<{ success: boolean; message?: string; error?: string }> => {
-  // Validate patient has required surgery info
-  if (!patient.surgeryDate || !patient.surgeryTime) {
+  // Validate patient has required surgery info - CHỈ CẦN NGÀY MỔ
+  if (!patient.surgeryDate) {
     return {
       success: false,
-      error: 'Thiếu thông tin lịch mổ (ngày mổ hoặc giờ mổ)'
+      error: 'Thiếu thông tin ngày mổ'
     };
   }
 
@@ -109,8 +109,8 @@ export const syncSurgeryToKhoa = async (patient: Patient): Promise<{ success: bo
  * Sync multiple patients' surgery info in batch
  */
 export const syncBatchSurgeries = async (patients: Patient[]): Promise<{ success: boolean; total: number; successCount: number; message?: string; error?: string }> => {
-  // Filter patients with complete surgery info
-  const validPatients = patients.filter(p => p.surgeryDate && p.surgeryTime);
+  // Filter patients with surgery date - CHỈ CẦN NGÀY MỔ
+  const validPatients = patients.filter(p => p.surgeryDate);
 
   if (validPatients.length === 0) {
     return {

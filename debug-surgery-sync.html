@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Surgery Sync</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        button {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #059669;
+        }
+        button.secondary {
+            background: #3b82f6;
+        }
+        button.secondary:hover {
+            background: #2563eb;
+        }
+        #output {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+        .info { color: #3b82f6; }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #374151;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Debug Surgery Sync</h1>
+
+        <div>
+            <label>Surgery Sheet URL:</label>
+            <input
+                type="text"
+                id="urlInput"
+                placeholder="https://script.google.com/macros/s/.../exec"
+                value="https://script.google.com/macros/s/AKfycbyaDX2PtFeVPlE7CAuh-LilbhUHuzYzcPxsBLdQY70KK1OX7x7uEwU8PtqQVrZUACaJ/exec"
+            >
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <button onclick="checkLocalStorage()">1. Kiểm tra localStorage</button>
+            <button onclick="setLocalStorage()">2. Lưu URL vào localStorage</button>
+            <button onclick="testConnection()">3. Test kết nối</button>
+            <button class="secondary" onclick="testFullSync()">4. Test đồng bộ đầy đủ</button>
+        </div>
+
+        <div id="output">Chờ lệnh...</div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        const urlInput = document.getElementById('urlInput');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('vi-VN');
+            const color = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
+            output.innerHTML += `<span class="${color}">[${timestamp}]</span> ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearLog() {
+            output.innerHTML = '';
+        }
+
+        function checkLocalStorage() {
+            clearLog();
+            log('=== KIỂM TRA LOCALSTORAGE ===', 'info');
+
+            const url = localStorage.getItem('smartround_v5_surgery_sheet_url');
+            if (url) {
+                log('✓ URL đã được lưu:', 'success');
+                log(url, 'info');
+            } else {
+                log('✗ Chưa có URL trong localStorage', 'error');
+            }
+
+            const autoSync = localStorage.getItem('smartround_v5_surgery_auto_sync');
+            log(`\nAuto-sync: ${autoSync === 'false' ? '❌ TẮT' : '✅ BẬT'}`, autoSync === 'false' ? 'error' : 'success');
+        }
+
+        function setLocalStorage() {
+            clearLog();
+            log('=== LƯU URL VÀO LOCALSTORAGE ===', 'info');
+
+            const url = urlInput.value.trim();
+            if (!url) {
+                log('✗ Vui lòng nhập URL', 'error');
+                return;
+            }
+
+            localStorage.setItem('smartround_v5_surgery_sheet_url', url);
+            log('✓ Đã lưu URL thành công!', 'success');
+            log(`URL: ${url}`, 'info');
+        }
+
+        async function testConnection() {
+            clearLog();
+            log('=== TEST KẾT NỐI ===', 'info');
+
+            const url = urlInput.value.trim();
+            if (!url) {
+                log('✗ Vui lòng nhập URL', 'error');
+                return;
+            }
+
+            log('Đang gửi request...', 'info');
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    },
+                    body: JSON.stringify({
+                        action: 'SYNC_SURGERY',
+                        secret: 'so-di-buong-4.0-2025-quang-tri-xyz',
+                        data: {
+                            fullName: 'TEST CONNECTION',
+                            surgeryDate: '2025-11-25',
+                            surgeryTime: '08:00',
+                            diagnosis: 'Test',
+                            surgeryMethod: 'Test'
+                        }
+                    })
+                });
+
+                log(`Response status: ${response.status} ${response.statusText}`,
+                    response.ok ? 'success' : 'error');
+
+                const result = await response.json();
+                log('\nResponse data:', 'info');
+                log(JSON.stringify(result, null, 2), result.success ? 'success' : 'error');
+
+                if (result.success) {
+                    log('\n✓ KẾT NỐI THÀNH CÔNG!', 'success');
+                } else {
+                    log(`\n✗ LỖI: ${result.error}`, 'error');
+                }
+
+            } catch (error) {
+                log(`\n✗ LỖI: ${error.message}`, 'error');
+                log('\nCó thể do:', 'info');
+                log('1. URL Apps Script không đúng', 'info');
+                log('2. Apps Script chưa deploy hoặc "Who has access" không phải "Anyone"', 'info');
+                log('3. CORS issue (cần check Apps Script)', 'info');
+            }
+        }
+
+        async function testFullSync() {
+            clearLog();
+            log('=== TEST ĐỒNG BỘ ĐẦY ĐỦ ===', 'info');
+
+            const url = urlInput.value.trim();
+            if (!url) {
+                log('✗ Vui lòng nhập URL', 'error');
+                return;
+            }
+
+            const testPatient = {
+                fullName: 'Nguyễn Văn Test',
+                surgeryDate: '2025-11-25',
+                surgeryTime: '08:30',
+                diagnosis: 'Gãy xương đùi',
+                surgeryMethod: 'Nẹp vít',
+                surgeonName: 'BS. Nguyễn Văn A',
+                operatingRoom: 'Phòng 1',
+                anesthesiaMethod: 'Mê NKQ',
+                surgeryClassification: 'Chấn thương',
+                surgeryRequirements: 'Săng trung',
+                surgeryNotes: 'Test từ debug tool'
+            };
+
+            log('Đang gửi dữ liệu bệnh nhân test...', 'info');
+            log(JSON.stringify(testPatient, null, 2), 'info');
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    },
+                    body: JSON.stringify({
+                        action: 'SYNC_SURGERY',
+                        secret: 'so-di-buong-4.0-2025-quang-tri-xyz',
+                        data: testPatient
+                    })
+                });
+
+                const result = await response.json();
+                log('\nKết quả:', 'info');
+                log(JSON.stringify(result, null, 2), result.success ? 'success' : 'error');
+
+                if (result.success) {
+                    log('\n✓ ĐỒNG BỘ THÀNH CÔNG!', 'success');
+                    log(`Action: ${result.action} (${result.action === 'inserted' ? 'Thêm mới' : 'Cập nhật'})`, 'success');
+                    log(`Row: ${result.row}`, 'info');
+                    log('\n→ Hãy kiểm tra Google Sheet xem data đã xuất hiện chưa!', 'success');
+                } else {
+                    log(`\n✗ THẤT BẠI: ${result.error}`, 'error');
+                }
+
+            } catch (error) {
+                log(`\n✗ LỖI: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            log('Tool đã sẵn sàng. Bấm button để bắt đầu debug!', 'success');
+        });
+    </script>
+</body>
+</html>

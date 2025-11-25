@@ -4,7 +4,7 @@ import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, 
 import { formatForGoogleSheet } from './services/geminiService';
 import { fetchPatients, fetchOrders, savePatient, saveOrder, confirmDischarge, fetchSettings, saveSettings } from './services/api';
 import { buildRoomBlocksFromConfig, WardConfig, SettingsPayload } from './services/sheetMapping';
-import { syncSurgeryToKhoa, syncBatchSurgeries } from './services/surgerySync';
+import { syncSurgeryToKhoa } from './services/surgerySync';
 import PatientCard from './components/PatientCard';
 import OrderModal from './components/OrderModal';
 import TransferModal from './components/TransferModal';
@@ -12,7 +12,7 @@ import PatientEditModal from './components/PatientEditModal';
 import AddPatientModal from './components/AddPatientModal';
 import SettingsView from './components/SettingsView';
 import StatisticsView from './components/StatisticsView';
-import { Stethoscope, Calendar, LayoutDashboard, Plus, Loader2, Search, Settings as SettingsIcon, ExternalLink, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, Clock, PieChart, UserCheck, Building, List, CalendarCheck } from 'lucide-react';
+import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, ExternalLink, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, UserCheck, Building, List, CalendarCheck, RefreshCw, Menu } from 'lucide-react';
 
 // Helper to remove Vietnamese accents for search
 const removeVietnameseTones = (str: string) => {
@@ -32,6 +32,55 @@ const removeVietnameseTones = (str: string) => {
     str = str.replace(/Đ/g, "D");
     return str;
 }
+
+/**
+ * Normalizes a date string (potentially from Google Sheets) to 'YYYY-MM-DD' format.
+ * This avoids timezone issues by only considering the date part.
+ * Handles "2024-07-20T17:00:00.000Z" -> "2024-07-21" (if in GMT+7) is wrong.
+ * It should be "2024-07-20T17:00:00.000Z" -> "2024-07-20".
+ */
+const normalizeDateString = (dateStr?: string): string => {
+    if (!dateStr) return '';
+    // Create a Date object. It will be in the browser's local timezone.
+    // '2025-11-24T17:00:00.000Z' in GMT+7 becomes '2025-11-25 00:00:00'.
+    const date = new Date(dateStr);
+    // Check if the date is valid
+    if (isNaN(date.getTime())) {
+        // If not a valid ISO string, it might be 'YYYY-MM-DD' already.
+        return dateStr.split('T')[0];
+    }
+    // Use local date parts to construct the YYYY-MM-DD string.
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+};
+
+// Helper to format surgery time from Google Sheets
+// Handles: "1899-12-30T01:53:30.000Z" → "01:53" or "08:30" → "08:30"
+const formatSurgeryTime = (timeStr?: string): string => {
+    if (!timeStr) return '';
+
+    try {
+        // If it's already in Vietnamese format "8h30", return as is
+        if (timeStr.includes('h')) return timeStr;
+
+        // If it's already HH:mm format, return as is
+        if (timeStr.includes(':') && timeStr.length <= 5 && !timeStr.includes('T')) {
+            return timeStr;
+        }
+
+        // If it's an ISO string (from Sheets or manual input), create a Date object.
+        // This will correctly interpret the UTC time and allow us to get local time parts.
+        const date = new Date(timeStr);
+        if (isNaN(date.getTime())) {
+            return timeStr; // Return original string if invalid
+        }
+
+        // Use local time parts to construct HH:mm string
+        return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+    } catch (error) {
+        console.error('Error formatting time:', timeStr, error);
+        return '';
+    }
+};
 
 const App: React.FC = () => {
     // --- State with Persistence ---
@@ -114,6 +163,7 @@ const App: React.FC = () => {
     // Filtering States
     const [selectedRoomBlockId, setSelectedRoomBlockId] = useState<string>(''); // Filter by "Khu" (Empty = All)
     const [selectedRoomNumber, setSelectedRoomNumber] = useState<string>(''); // Filter by "Phòng" inside Khu
+    const [admissionDateFilterDate, setAdmissionDateFilterDate] = useState<Date | null>(null); // Filter by specific admission date (null = all)
     const [searchQuery, setSearchQuery] = useState('');
 
     // Modals
@@ -122,16 +172,17 @@ const App: React.FC = () => {
     const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
     const [transferMode, setTransferMode] = useState<'TRANSFER' | 'DISCHARGE'>('TRANSFER');
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
 
     const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
     const [expandedBlocks, setExpandedBlocks] = useState<{[key: string]: boolean}>({});
+    const [activeMenuBlockId, setActiveMenuBlockId] = useState<string | null>(null);
 
     // UI States for Surgery
     const [surgeryTab, setSurgeryTab] = useState<'WAITING' | 'SCHEDULED'>('WAITING');
     const [expandedSurgeryGroups, setExpandedSurgeryGroups] = useState<{[key: string]: boolean}>({
         'today': true, 'tomorrow': true, 'upcoming': true
     });
-    const [isSyncingSurgery, setIsSyncingSurgery] = useState(false);
 
     // --- Effects for Persistence ---
     useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}doctors`, JSON.stringify(doctors)); }, [doctors]);
@@ -143,6 +194,42 @@ const App: React.FC = () => {
     useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}sheet_url`, sheetUrl); }, [sheetUrl]);
     useEffect(() => { localStorage.setItem(`${STORAGE_KEY_PREFIX}surgery_sheet_url`, surgerySheetUrl); }, [surgerySheetUrl]);
 
+    // --- Data Loading Logic ---
+    const loadDataFromSheet = async () => {
+        setIsLoadingPatients(true);
+        try {
+            const settings = await fetchSettings();
+            setDoctors(settings.doctors);
+            setOperatingRooms(settings.operatingRooms);
+            setAnesthesiaMethods(settings.anesthesiaMethods);
+            setSurgeryClassifications(settings.surgeryClassifications);
+            setSurgeryRequirements(settings.surgeryRequirements);
+            setWardConfigs(settings.wards);
+            setRooms(buildRoomBlocksFromConfig([], settings.wards));
+            setSettingsLoaded(true);
+            setConfigDirty(false);
+
+            const patients = await fetchPatients();
+            const enriched = await Promise.all(patients.map(async (patient) => {
+                try {
+                    const orders = await fetchOrders(patient.id);
+                    return { ...patient, orders };
+                } catch (error) {
+                    console.error('Không lấy được y lệnh cho bệnh nhân', patient.id, error);
+                    return { ...patient, orders: [] };
+                }
+            }));
+            setRooms(buildRoomBlocksFromConfig(enriched, settings.wards));
+            setApiError(null);
+            setNotification({ message: 'Đã đồng bộ dữ liệu từ Google Sheet', type: 'success' });
+        } catch (error) {
+            console.error('Lỗi khi tải dữ liệu từ API:', error);
+            setApiError((error as Error)?.message || 'Không tải được dữ liệu từ Google Sheet');
+        } finally {
+            setIsLoadingPatients(false);
+        }
+    };
+
     // --- Init Logic ---
     useEffect(() => {
         // Default expand all blocks initially
@@ -152,49 +239,7 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        let isActive = true;
-        const loadFromApi = async () => {
-            setIsLoadingPatients(true);
-            try {
-                const settings = await fetchSettings();
-                if (!isActive) return;
-                setDoctors(settings.doctors);
-                setOperatingRooms(settings.operatingRooms);
-                setAnesthesiaMethods(settings.anesthesiaMethods);
-                setSurgeryClassifications(settings.surgeryClassifications);
-                setSurgeryRequirements(settings.surgeryRequirements);
-                setWardConfigs(settings.wards);
-                setRooms(buildRoomBlocksFromConfig([], settings.wards));
-                setSettingsLoaded(true);
-                setConfigDirty(false);
-
-                const patients = await fetchPatients();
-                const enriched = await Promise.all(patients.map(async (patient) => {
-                    try {
-                        const orders = await fetchOrders(patient.id);
-                        return { ...patient, orders };
-                    } catch (error) {
-                        console.error('Không lấy được y lệnh cho bệnh nhân', patient.id, error);
-                        return { ...patient, orders: [] };
-                    }
-                }));
-                if (!isActive) return;
-                setRooms(buildRoomBlocksFromConfig(enriched, settings.wards));
-                setApiError(null);
-                setNotification({ message: 'Đã đồng bộ dữ liệu từ Google Sheet', type: 'success' });
-            } catch (error) {
-                console.error('Lỗi khi tải dữ liệu từ API:', error);
-                if (isActive) {
-                    setApiError((error as Error)?.message || 'Không tải được dữ liệu từ Google Sheet');
-                }
-            } finally {
-                if (isActive) setIsLoadingPatients(false);
-            }
-        };
-        loadFromApi();
-        return () => {
-            isActive = false;
-        };
+        loadDataFromSheet();
     }, []);
 
     useEffect(() => {
@@ -335,6 +380,9 @@ const App: React.FC = () => {
         }));
         setRooms(updatedRooms);
         if (updatedPatient) {
+            if (!updatedPatient.isScheduledForSurgery && updates.surgeryDate) {
+                updatedPatient.isScheduledForSurgery = true;
+            }
             savePatient(updatedPatient).catch(error => {
                 console.error('Lưu thông tin bệnh nhân thất bại', error);
             });
@@ -351,7 +399,8 @@ const App: React.FC = () => {
                 updates.surgeryRequirements !== undefined ||
                 updates.surgeryNotes !== undefined;
 
-            if (hasSurgeryUpdate && updatedPatient.surgeryDate && updatedPatient.surgeryTime) {
+            // ✅ Tự động đồng bộ khi có update lịch mổ VÀ có ngày mổ (không cần giờ)
+            if (hasSurgeryUpdate && updatedPatient.surgeryDate) {
                 syncSurgeryToKhoa(updatedPatient)
                     .then(result => {
                         if (result.success) {
@@ -442,51 +491,20 @@ const App: React.FC = () => {
         }
     };
 
-    const handleToggleSurgery = (id: string) => {
-        const p = rooms.flatMap(r => r.patients).find(pat => pat.id === id);
-        if (!p) return;
-        const newStatus = !p.isScheduledForSurgery;
-        handleUpdatePatient(id, {
-            isScheduledForSurgery: newStatus,
-        });
+    const handleRegisterSurgery = (id: string) => {
+        const patient = rooms.flatMap(r => r.patients).find(p => p.id === id);
+        if (!patient || patient.isScheduledForSurgery) return;
+        handleUpdatePatient(id, { isScheduledForSurgery: true });
     };
 
-    const handleManualSyncSurgeries = async () => {
-        setIsSyncingSurgery(true);
-
-        // Get all scheduled patients with complete surgery info
-        const scheduledPatients = rooms
-            .flatMap(r => r.patients)
-            .filter(p => p.isScheduledForSurgery && p.surgeryDate && p.surgeryTime);
-
-        if (scheduledPatients.length === 0) {
-            setNotification({ message: 'Không có ca mổ nào để đồng bộ', type: 'error' });
-            setIsSyncingSurgery(false);
-            return;
-        }
-
-        try {
-            const result = await syncBatchSurgeries(scheduledPatients);
-            if (result.success) {
-                setNotification({
-                    message: result.message || `Đã đồng bộ ${result.successCount}/${result.total} ca mổ`,
-                    type: 'success'
-                });
-            } else {
-                setNotification({
-                    message: result.error || 'Đồng bộ thất bại',
-                    type: 'error'
-                });
-            }
-        } catch (error) {
-            console.error('Error in manual sync:', error);
-            setNotification({
-                message: 'Lỗi khi đồng bộ lịch mổ',
-                type: 'error'
-            });
-        } finally {
-            setIsSyncingSurgery(false);
-        }
+    const handleCancelSurgery = (id: string) => {
+        const patient = rooms.flatMap(r => r.patients).find(p => p.id === id);
+        if (!patient) return;
+        handleUpdatePatient(id, {
+            isScheduledForSurgery: false,
+            surgeryDate: '',
+            surgeryTime: ''
+        });
     };
 
     const handleTransferConfirm = (targetRoomId?: string, targetRoomNumber?: string, notes?: string, date?: string) => {
@@ -558,6 +576,9 @@ const App: React.FC = () => {
         } else if (currentView === AppView.SEVERE_CASES) {
             return p.isSevere && p.status !== PatientStatus.ARCHIVED;
         } else if (currentView === AppView.SURGERY_SCHEDULE) {
+            // [LOGIC CUỐI CÙNG & ĐÃ ĐƯỢC XÁC NHẬN]
+            // Một bệnh nhân chỉ được vào tab Lịch mổ KHI VÀ CHỈ KHI `isScheduledForSurgery` là true.
+            // `isScheduledForSurgery` đã được chuẩn hóa trong mapRawPatient để bao gồm cả trường hợp có surgeryDate.
             return p.isScheduledForSurgery && p.status !== PatientStatus.ARCHIVED;
         } else if (currentView === AppView.DISCHARGE_LIST) {
             return !!p.dischargeDate && p.status !== PatientStatus.ARCHIVED;
@@ -568,9 +589,17 @@ const App: React.FC = () => {
     // Global search filtering
     const passesGlobalFilters = (p: Patient) => {
         if (!filterPatient(p)) return false;
-        
+
         // Room Number filter (NOW APPLIES TO ALL VIEWS INCLUDING SURGERY)
         if (selectedRoomNumber && p.roomNumber !== selectedRoomNumber) return false;
+
+        // ✅ Admission Date filter - filter by specific date
+        if (admissionDateFilterDate && p.admissionDate) {
+            // Convert filter date to 'YYYY-MM-DD' string to avoid timezone issues
+            const filterDateString = admissionDateFilterDate.toISOString().split('T')[0];
+            const admissionDateString = normalizeDateString(p.admissionDate);
+            if (admissionDateString !== filterDateString) return false;
+        }
 
         // Text Search
         if (searchQuery) {
@@ -597,19 +626,58 @@ const App: React.FC = () => {
         tomorrowDate.setDate(tomorrowDate.getDate() + 1);
         const tomorrow = tomorrowDate.toISOString().split('T')[0];
 
-        // Separating Scheduled vs Waiting
-        // "Unscheduled" means isScheduledForSurgery = true BUT no surgeryDate set (or empty string)
-        const waiting = filteredPatients.filter(p => !p.surgeryDate);
-        const scheduled = filteredPatients.filter(p => !!p.surgeryDate);
+        // ✅ Helper function to check if patient has valid surgery date (consistent with filter logic)
+        const hasSurgeryDate = (p: Patient) => !!p.surgeryDate && p.surgeryDate.trim() !== '';
+
+        // [LOGIC PHÂN NHÓM CUỐI CÙNG & ĐÃ ĐƯỢC XÁC NHẬN]
+        // Phân loại bệnh nhân đã qua bộ lọc (những người có isScheduledForSurgery = true) vào 2 nhóm:
+        // - waiting: Những người chưa có ngày mổ (nhưng đã đăng ký mổ).
+        // - scheduled: Những người đã có ngày mổ.
+        const waiting = filteredPatients.filter(p => !hasSurgeryDate(p));
+        const scheduled = filteredPatients.filter(p => hasSurgeryDate(p));
+
+        // 🐛 DEBUG: Log để kiểm tra
+        console.log('DEBUG Surgery Groups:', {
+            today,
+            filteredPatientsCount: filteredPatients.length,
+            scheduledCount: scheduled.length,
+            waitingCount: waiting.length,
+            sampleSurgeryDates: scheduled.slice(0, 3).map(p => ({ name: p.fullName, date: p.surgeryDate, time: p.surgeryTime }))
+        });
 
         const groups = {
-            today: scheduled.filter(p => p.surgeryDate === today).sort((a, b) => (a.surgeryTime || '').localeCompare(b.surgeryTime || '')),
-            tomorrow: scheduled.filter(p => p.surgeryDate === tomorrow).sort((a, b) => (a.surgeryTime || '').localeCompare(b.surgeryTime || '')),
-            upcoming: scheduled.filter(p => p.surgeryDate && p.surgeryDate > tomorrow).sort((a, b) => a.surgeryDate!.localeCompare(b.surgeryDate!)),
+            today: scheduled.filter(p => {
+                const dateOnly = normalizeDateString(p.surgeryDate); // ✅ Extract yyyy-MM-dd from ISO string
+                return dateOnly === today;
+            }).sort((a, b) => (a.surgeryTime || '').localeCompare(b.surgeryTime || '')),
+            tomorrow: scheduled.filter(p => {
+                const dateOnly = normalizeDateString(p.surgeryDate);
+                return dateOnly === tomorrow;
+            }).sort((a, b) => (a.surgeryTime || '').localeCompare(b.surgeryTime || '')),
+            upcoming: scheduled.filter(p => {
+                const dateOnly = normalizeDateString(p.surgeryDate);
+                return dateOnly > tomorrow;
+            }).sort((a, b) => a.surgeryDate!.localeCompare(b.surgeryDate!)),
         };
 
         return { surgeryGroups: groups, unscheduledPatients: waiting };
     }, [filteredPatients]);
+
+    // Count patients for badge indicators
+    const severeCount = useMemo(() => {
+        return rooms.flatMap(r => r.patients).filter(p =>
+            p.isSevere && p.status !== PatientStatus.ARCHIVED
+        ).length;
+    }, [rooms]);
+
+    // ✅ Badge chỉ đếm bệnh CHỜ XẾP LỊCH (chưa có ngày mổ)
+    const surgeryCount = useMemo(() => {
+        return rooms.flatMap(r => r.patients).filter(p => {
+            const hasSurgeryDate = !!p.surgeryDate && p.surgeryDate.trim() !== '';
+            // Chỉ đếm bệnh nhân đã đăng ký mổ NHƯNG chưa có ngày mổ
+            return p.isScheduledForSurgery && !hasSurgeryDate && p.status !== PatientStatus.ARCHIVED;
+        }).length;
+    }, [rooms]);
 
     // --- Render ---
     return (
@@ -622,15 +690,58 @@ const App: React.FC = () => {
                             <div className="bg-medical-500 text-white p-2 rounded-xl shadow-glow">
                                 <Stethoscope size={20} />
                             </div>
-                            <h1 className="font-bold text-slate-800 text-lg tracking-tight">SmartRound</h1>
+                            <h1 className="font-bold text-slate-800 text-lg tracking-tight">Ngoại CT- Bỏng</h1>
                         </div>
-                        
-                        <button 
-                            onClick={() => setIsAddPatientModalOpen(true)}
-                            className="bg-medical-500 text-white p-2.5 rounded-full shadow-lg hover:bg-medical-600 active:scale-90 transition-all duration-200"
-                        >
-                            <Plus size={24} />
-                        </button>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={loadDataFromSheet}
+                                disabled={isLoadingPatients}
+                                className="bg-blue-500 text-white p-2.5 rounded-full shadow-lg hover:bg-blue-600 active:scale-90 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Làm mới dữ liệu từ Google Sheet"
+                            >
+                                <RefreshCw size={20} className={isLoadingPatients ? 'animate-spin' : ''} />
+                            </button>
+                            <button
+                                onClick={() => setIsAddPatientModalOpen(true)}
+                                className="bg-medical-500 text-white p-2.5 rounded-full shadow-lg hover:bg-medical-600 active:scale-90 transition-all duration-200"
+                            >
+                                <Plus size={24} />
+                            </button>
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowHamburgerMenu(!showHamburgerMenu)}
+                                    className="bg-gray-100 text-gray-700 p-2.5 rounded-full shadow-md hover:bg-gray-200 active:scale-90 transition-all duration-200"
+                                    title="Menu"
+                                >
+                                    <Menu size={20} />
+                                </button>
+                                {showHamburgerMenu && (
+                                    <div className="absolute top-12 right-0 bg-white shadow-2xl border border-gray-100 rounded-2xl py-2 w-48 z-50 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                                        <button
+                                            onClick={() => {
+                                                setCurrentView(AppView.STATISTICS);
+                                                setShowHamburgerMenu(false);
+                                            }}
+                                            className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-gray-50 flex items-center gap-3 font-medium"
+                                        >
+                                            <PieChart size={18} className="text-purple-500" />
+                                            Thống kê
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setCurrentView(AppView.SETTINGS);
+                                                setShowHamburgerMenu(false);
+                                            }}
+                                            className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-gray-50 flex items-center gap-3 font-medium"
+                                        >
+                                            <SettingsIcon size={18} className="text-slate-500" />
+                                            Cài đặt
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     {/* Search & Filters */}
@@ -674,7 +785,7 @@ const App: React.FC = () => {
 
                                 {/* Dropdown Room Filter */}
                                 <div className="relative w-[35%]">
-                                    <select 
+                                    <select
                                         value={selectedRoomNumber}
                                         onChange={(e) => setSelectedRoomNumber(e.target.value)}
                                         disabled={!selectedRoomBlockId} // Disable if All Zones selected
@@ -688,6 +799,58 @@ const App: React.FC = () => {
                                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                                         <ChevronDown size={16} className="text-gray-400"/>
                                     </div>
+                                </div>
+
+                                {/* Date Picker with +/- buttons */}
+                                <div className="flex items-center gap-1 bg-white border border-gray-200/80 rounded-xl px-2 py-1.5 shadow-sm">
+                                    <button
+                                        onClick={() => {
+                                            if (!admissionDateFilterDate) {
+                                                // If no date selected, start with today
+                                                setAdmissionDateFilterDate(new Date());
+                                            } else {
+                                                // Decrease date by 1 day
+                                                const newDate = new Date(admissionDateFilterDate);
+                                                newDate.setDate(newDate.getDate() - 1);
+                                                setAdmissionDateFilterDate(newDate);
+                                            }
+                                        }}
+                                        className="text-gray-600 hover:text-medical-500 hover:bg-medical-50 rounded-lg p-1 transition-colors active:scale-95"
+                                    >
+                                        <ChevronDown size={16} className="rotate-90" />
+                                    </button>
+                                    <input
+                                        type="date"
+                                        value={admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : ''}
+                                        onChange={(e) => setAdmissionDateFilterDate(e.target.value ? new Date(e.target.value) : null)}
+                                        className="text-xs font-medium text-gray-700 border-none bg-transparent focus:outline-none focus:ring-0 w-[100px] text-center"
+                                        placeholder="Chọn ngày"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            if (!admissionDateFilterDate) {
+                                                // If no date selected, start with today
+                                                setAdmissionDateFilterDate(new Date());
+                                            } else {
+                                                // Increase date by 1 day
+                                                const newDate = new Date(admissionDateFilterDate);
+                                                newDate.setDate(newDate.getDate() + 1);
+                                                setAdmissionDateFilterDate(newDate);
+                                            }
+                                        }}
+                                        className="text-gray-600 hover:text-medical-500 hover:bg-medical-50 rounded-lg p-1 transition-colors active:scale-95"
+                                    >
+                                        <ChevronDown size={16} className="-rotate-90" />
+                                    </button>
+                                    {admissionDateFilterDate && (
+                                        <button
+                                            onClick={() => setAdmissionDateFilterDate(null)}
+                                            className="text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg p-1 transition-colors ml-1"
+                                            title="Xóa bộ lọc"
+                                        >
+                                            <span className="text-xs font-bold">×</span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -766,7 +929,8 @@ const App: React.FC = () => {
                                     key={p.id} 
                                     patient={p}
                                     onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }}
-                                    onToggleSurgery={() => handleToggleSurgery(p.id)}
+                                    onRegisterSurgery={() => handleRegisterSurgery(p.id)}
+                                    onCancelSurgery={() => handleCancelSurgery(p.id)}
                                     onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }}
                                     onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }}
                                     onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }}
@@ -798,25 +962,6 @@ const App: React.FC = () => {
                                     <CalendarCheck size={16}/> Đã lên lịch ({surgeryGroups.today.length + surgeryGroups.tomorrow.length + surgeryGroups.upcoming.length})
                                 </button>
                             </div>
-                            {/* Manual Sync Button */}
-                            <button
-                                onClick={handleManualSyncSurgeries}
-                                disabled={isSyncingSurgery}
-                                className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/30 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                                title="Đồng bộ tất cả ca mổ đã xếp lịch lên sheet khoa"
-                            >
-                                {isSyncingSurgery ? (
-                                    <>
-                                        <Loader2 size={16} className="animate-spin" />
-                                        Đang đồng bộ...
-                                    </>
-                                ) : (
-                                    <>
-                                        <ExternalLink size={16} />
-                                        Đồng bộ lên khoa
-                                    </>
-                                )}
-                            </button>
                         </div>
 
                         {/* TAB 1: WAITING LIST */}
@@ -865,7 +1010,7 @@ const App: React.FC = () => {
                                             {surgeryGroups.today.map(p => (
                                                 <div key={p.id} className="flex items-center gap-4 p-4 bg-white border border-orange-100 rounded-xl shadow-sm hover:shadow-md transition-shadow relative group">
                                                     <div className="flex flex-col items-center min-w-[60px]">
-                                                        <div className="font-bold text-2xl text-orange-500 tracking-tighter">{p.surgeryTime || '--:--'}</div>
+                                                        <div className="font-bold text-2xl text-orange-500 tracking-tighter">{formatSurgeryTime(p.surgeryTime) || '--:--'}</div>
                                                         {p.operatingRoom && <div className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded mt-1">{p.operatingRoom}</div>}
                                                     </div>
                                                     <div className="flex-1">
@@ -902,7 +1047,7 @@ const App: React.FC = () => {
                                             {surgeryGroups.tomorrow.map(p => (
                                                 <div key={p.id} className="flex items-center gap-4 p-4 bg-white border border-blue-100 rounded-xl shadow-sm hover:shadow-md transition-shadow relative group">
                                                     <div className="flex flex-col items-center min-w-[60px]">
-                                                        <div className="font-bold text-2xl text-blue-500 tracking-tighter">{p.surgeryTime || '--:--'}</div>
+                                                        <div className="font-bold text-2xl text-blue-500 tracking-tighter">{formatSurgeryTime(p.surgeryTime) || '--:--'}</div>
                                                         {p.operatingRoom && <div className="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded mt-1">{p.operatingRoom}</div>}
                                                     </div>
                                                     <div className="flex-1">
@@ -936,9 +1081,9 @@ const App: React.FC = () => {
                                     {expandedSurgeryGroups.upcoming && (
                                         <div className="p-3 space-y-3">
                                             {surgeryGroups.upcoming.length === 0 && <p className="text-sm text-gray-500 p-2 italic text-center">Không có ca mổ sắp tới.</p>}
-                                            {surgeryGroups.upcoming.map(p => (
+                                        {surgeryGroups.upcoming.sort((a, b) => (a.surgeryDate || '').localeCompare(b.surgeryDate || '')).map(p => (
                                                 <div key={p.id} className="flex items-center gap-4 p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow-md transition-shadow relative">
-                                                    <div className="text-sm font-bold text-gray-500 w-16 text-center">{p.surgeryDate?.split('-').reverse().slice(0,2).join('/')}</div>
+                                                    <div className="text-sm font-bold text-gray-500 w-16 text-center">{p.surgeryDate?.split('T')[0].split('-').reverse().slice(0,2).join('/')}</div>
                                                     <div className="flex-1">
                                                         <div className="font-bold text-slate-800">{p.fullName}</div>
                                                         <div className="text-xs text-gray-500">{p.diagnosis}</div>
@@ -979,7 +1124,8 @@ const App: React.FC = () => {
                                             key={patient.id} 
                                             patient={patient}
                                             onAddOrder={() => { setSelectedPatientId(patient.id); setIsOrderModalOpen(true); }}
-                                            onToggleSurgery={() => handleToggleSurgery(patient.id)}
+                                            onRegisterSurgery={() => handleRegisterSurgery(patient.id)}
+                                            onCancelSurgery={() => handleCancelSurgery(patient.id)}
                                             onTransfer={() => { setSelectedPatientId(patient.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }}
                                             onDischarge={() => { setSelectedPatientId(patient.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }}
                                             onEdit={() => { setSelectedPatientId(patient.id); setIsEditModalOpen(true); }}
@@ -997,7 +1143,7 @@ const App: React.FC = () => {
                                         if (blockPatients.length === 0) return null;
 
                                         return (
-                                            <div key={block.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-soft border border-white/50 mb-4 overflow-visible">
+                                            <div key={block.id} className={`bg-white/70 backdrop-blur-sm rounded-2xl shadow-soft border border-white/50 mb-4 overflow-visible relative transition-shadow ${activeMenuBlockId === block.id ? 'z-10 shadow-2xl' : 'z-0'}`}>
                                                 <div 
                                                     className="px-5 py-4 flex justify-between items-center cursor-pointer active:bg-gray-50/50 rounded-2xl transition-colors"
                                                     onClick={() => setExpandedBlocks(prev => ({...prev, [block.id]: !prev[block.id]}))}
@@ -1021,7 +1167,8 @@ const App: React.FC = () => {
                                                                 key={patient.id} 
                                                                 patient={patient}
                                                                 onAddOrder={() => { setSelectedPatientId(patient.id); setIsOrderModalOpen(true); }}
-                                                                onToggleSurgery={() => handleToggleSurgery(patient.id)}
+                                                                onRegisterSurgery={() => handleRegisterSurgery(patient.id)}
+                                                                onCancelSurgery={() => handleCancelSurgery(patient.id)}
                                                                 onTransfer={() => { setSelectedPatientId(patient.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }}
                                                                 onDischarge={() => { setSelectedPatientId(patient.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }}
                                                                 onEdit={() => { setSelectedPatientId(patient.id); setIsEditModalOpen(true); }}
@@ -1044,8 +1191,9 @@ const App: React.FC = () => {
                 )}
             </main>
 
-            {/* Bottom Navigation with Glassmorphism */}
-            <nav className="fixed bottom-0 inset-x-0 bg-white/80 backdrop-blur-xl border-t border-gray-200/50 flex justify-around items-center h-[88px] z-40 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
+            {/* Bottom Navigation with Pill Shape */}
+            <nav className="fixed bottom-0 inset-x-0 flex justify-center z-40 pb-6">
+                <div className="bg-gray-200 backdrop-blur-xl rounded-full flex justify-around items-center h-[72px] mx-4 px-4 shadow-lg max-w-2xl w-full">
                 <button 
                     onClick={() => setCurrentView(AppView.WARD_ROUND)}
                     className={`flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === AppView.WARD_ROUND ? 'text-medical-600' : 'text-gray-400 hover:text-gray-500'}`}
@@ -1055,25 +1203,35 @@ const App: React.FC = () => {
                     </div>
                     <span className="text-[10px] font-semibold tracking-wide">Đi buồng</span>
                 </button>
-                <button 
+                <button
                     onClick={() => setCurrentView(AppView.SEVERE_CASES)}
                     className={`flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === AppView.SEVERE_CASES ? 'text-red-500' : 'text-gray-400 hover:text-gray-500'}`}
                 >
-                    <div className={`p-1 rounded-xl transition-colors ${currentView === AppView.SEVERE_CASES ? 'bg-red-50' : ''}`}>
+                    <div className={`p-1 rounded-xl transition-colors relative ${currentView === AppView.SEVERE_CASES ? 'bg-red-50' : ''}`}>
                         <AlertCircle size={24} strokeWidth={currentView === AppView.SEVERE_CASES ? 2.5 : 2} />
+                        {severeCount > 0 && (
+                            <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full animate-pulse shadow-lg flex items-center justify-center px-1">
+                                <span className="text-white text-[10px] font-bold">{severeCount}</span>
+                            </div>
+                        )}
                     </div>
                     <span className="text-[10px] font-semibold tracking-wide">Nặng</span>
                 </button>
-                <button 
+                <button
                     onClick={() => setCurrentView(AppView.SURGERY_SCHEDULE)}
-                    className={`flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === AppView.SURGERY_SCHEDULE ? 'text-orange-500' : 'text-gray-400 hover:text-gray-500'}`}
+                    className={`flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === AppView.SURGERY_SCHEDULE ? 'text-blue-500' : 'text-gray-400 hover:text-gray-500'}`}
                 >
-                    <div className={`p-1 rounded-xl transition-colors ${currentView === AppView.SURGERY_SCHEDULE ? 'bg-orange-50' : ''}`}>
+                    <div className={`p-1 rounded-xl transition-colors relative ${currentView === AppView.SURGERY_SCHEDULE ? 'bg-blue-50' : ''}`}>
                         <Calendar size={24} strokeWidth={currentView === AppView.SURGERY_SCHEDULE ? 2.5 : 2} />
+                        {surgeryCount > 0 && (
+                            <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-blue-500 rounded-full animate-pulse shadow-lg flex items-center justify-center px-1">
+                                <span className="text-white text-[10px] font-bold">{surgeryCount}</span>
+                            </div>
+                        )}
                     </div>
                     <span className="text-[10px] font-semibold tracking-wide">Lịch mổ</span>
                 </button>
-                <button 
+                <button
                     onClick={() => setCurrentView(AppView.DISCHARGE_LIST)}
                     className={`flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === AppView.DISCHARGE_LIST ? 'text-green-600' : 'text-gray-400 hover:text-gray-500'}`}
                 >
@@ -1082,24 +1240,7 @@ const App: React.FC = () => {
                     </div>
                     <span className="text-[10px] font-semibold tracking-wide">Ra viện</span>
                 </button>
-                 <button 
-                    onClick={() => setCurrentView(AppView.STATISTICS)}
-                    className={`flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === AppView.STATISTICS ? 'text-purple-600' : 'text-gray-400 hover:text-gray-500'}`}
-                >
-                    <div className={`p-1 rounded-xl transition-colors ${currentView === AppView.STATISTICS ? 'bg-purple-50' : ''}`}>
-                        <PieChart size={24} strokeWidth={currentView === AppView.STATISTICS ? 2.5 : 2} />
-                    </div>
-                    <span className="text-[10px] font-semibold tracking-wide">Thống kê</span>
-                </button>
-                <button 
-                    onClick={() => setCurrentView(AppView.SETTINGS)}
-                    className={`flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === AppView.SETTINGS ? 'text-slate-800' : 'text-gray-400 hover:text-gray-500'}`}
-                >
-                    <div className={`p-1 rounded-xl transition-colors ${currentView === AppView.SETTINGS ? 'bg-slate-100' : ''}`}>
-                         <SettingsIcon size={24} strokeWidth={currentView === AppView.SETTINGS ? 2.5 : 2} />
-                    </div>
-                    <span className="text-[10px] font-semibold tracking-wide">Cài đặt</span>
-                </button>
+                </div>
             </nav>
 
             {/* Modals */}

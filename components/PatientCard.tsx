@@ -1,12 +1,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { Patient, OrderStatus, PatientStatus } from '../types';
 import { Calendar, ClipboardList, MoreHorizontal, LogOut, ArrowRightLeft, Activity, Edit3, Syringe, Clock, Square, AlertTriangle, AlertCircle, Sparkles, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 
 interface PatientCardProps {
     patient: Patient;
     onAddOrder: (patientId: string) => void;
-    onToggleSurgery: (patientId: string) => void;
+    onRegisterSurgery?: (patientId: string) => void;
+    onCancelSurgery?: (patientId: string) => void;
     onTransfer: (patientId: string) => void;
     onDischarge: (patientId: string) => void;
     onEdit: (patientId: string) => void;
@@ -16,16 +18,13 @@ interface PatientCardProps {
     onQuickSevereToggle?: (patientId: string) => void;
 }
 
-const PatientCard: React.FC<PatientCardProps> = ({ 
-    patient, onAddOrder, onToggleSurgery, onTransfer, onDischarge, onEdit,
-    showDischargeConfirm, onConfirmDischarge, onCompleteOrder, onQuickSevereToggle
-}) => {
+const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegisterSurgery, onCancelSurgery, onTransfer, onDischarge, onEdit, showDischargeConfirm, onConfirmDischarge, onCompleteOrder, onQuickSevereToggle }) => {
     const [expanded, setExpanded] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
+    const [menuPosition, setMenuPosition] = useState<{ top: number, right: number } | null>(null);
     const [showDetails, setShowDetails] = useState(false); // Collapsible details state
 
-    // Refs for click outside logic
-    const menuRef = useRef<HTMLDivElement>(null);
+    // Ref for menu trigger to handle blur/focus
     const triggerRef = useRef<HTMLButtonElement>(null);
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -33,14 +32,19 @@ const PatientCard: React.FC<PatientCardProps> = ({
     // Handle Click Outside to Close Menu
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (
-                showMenu && 
-                menuRef.current && 
-                !menuRef.current.contains(event.target as Node) &&
-                triggerRef.current &&
-                !triggerRef.current.contains(event.target as Node)
-            ) {
-                setShowMenu(false);
+            // If menu is not open, do nothing.
+            // This check is important to prevent unnecessary logic when menu is already closed.
+            if (!showMenu) return; 
+
+            // Check if the click occurred outside the trigger button AND outside the menu portal itself.
+            // This ensures that clicks inside the menu (on its buttons) are processed,
+            // and clicks outside both the trigger and the menu will close the menu.
+            // We need to check for the menuElement because the menu is rendered in a portal,
+            // so its DOM position is not within the PatientCard's hierarchy.
+            const menuElement = document.getElementById(`menu-portal-${patient.id}`);
+            if (triggerRef.current && !triggerRef.current.contains(event.target as Node) &&
+                menuElement && !menuElement.contains(event.target as Node)) {
+                    setShowMenu(false);
             }
         };
 
@@ -48,7 +52,7 @@ const PatientCard: React.FC<PatientCardProps> = ({
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
         };
-    }, [showMenu]);
+    }, [showMenu, patient.id]);
     
     // Helper to format Date string to DD/MM/YYYY safe
     const formatDateVN = (isoDate: string) => {
@@ -88,17 +92,14 @@ const PatientCard: React.FC<PatientCardProps> = ({
     // --- Status Badge Logic (TP/HP) ---
     let rightSideBadge = null;
     let postOpDays = null;
-    let isPostOpCritical = false; // Logic for auto severe
 
     // Check strictly if scheduled for surgery AND has a date in the past/today
     if (patient.isScheduledForSurgery && patient.surgeryDate && new Date(patient.surgeryDate) <= new Date()) {
         // Hậu phẫu (Post-op)
         const days = Math.abs(getDiffDays(patient.surgeryDate));
         postOpDays = days;
-        
-        // Logic: Post-op day 0 and day 1 are automatically considered critical/severe
-        if (days <= 1) isPostOpCritical = true;
 
+        // ✅ Tag HP-ngày: Đỏ nếu ngày 0-1, xanh nếu > 1
         rightSideBadge = (
             <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border shadow-sm ${days <= 1 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                 HP-{days}
@@ -117,8 +118,8 @@ const PatientCard: React.FC<PatientCardProps> = ({
     const hospitalDays = Math.abs(getDiffDays(patient.admissionDate)) + 1;
 
     // --- Card Color Logic ---
-    // Combine manual flag with auto-logic
-    const isSevere = patient.isSevere || isPostOpCritical;
+    // ✅ Chỉ dùng manual flag, KHÔNG tự động thêm viền đỏ cho hậu phẫu
+    const isSevere = patient.isSevere;
 
     const isNewPatient = () => {
         if (!patient.roomEntryDate) {
@@ -151,7 +152,7 @@ const PatientCard: React.FC<PatientCardProps> = ({
     const isDischarged = patient.status === PatientStatus.DISCHARGED;
 
     return (
-        <div className={`relative rounded-3xl mb-4 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${getCardStyle()} ${showMenu ? 'z-30' : 'z-10'}`}>
+        <div className={`relative rounded-3xl mb-4 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${getCardStyle()}`}>
             
             {/* Header / Main Info */}
             <div className="p-5 flex items-start gap-4 cursor-pointer" onClick={() => !showMenu && setExpanded(!expanded)}>
@@ -225,44 +226,84 @@ const PatientCard: React.FC<PatientCardProps> = ({
                 </div>
 
                 {/* Actions Trigger */}
-                <button 
+                <button
                     ref={triggerRef}
-                    onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (triggerRef.current) {
+                            const rect = triggerRef.current.getBoundingClientRect();
+                            setMenuPosition({
+                                top: rect.bottom + 8, // Position below the button
+                                right: window.innerWidth - rect.right, // Align to the right edge
+                            });
+                        }
+                        setShowMenu(prev => !prev);
+                    }}
                     className="p-2 -mr-2 text-gray-400 hover:text-medical-600 active:bg-black/5 rounded-full transition-colors"
                 >
                     <MoreHorizontal size={24} />
                 </button>
             </div>
 
-            {/* Quick Action Menu Overlay - Glassmorphism */}
-            {showMenu && (
-                <div 
-                    ref={menuRef}
-                    className="absolute top-14 right-4 z-50 bg-white/95 backdrop-blur-2xl shadow-2xl border border-gray-100 rounded-2xl py-2 w-60 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-black/5"
-                >
-                    <button onClick={() => { onEdit(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-slate-700 hover:bg-gray-50 flex items-center gap-3 font-medium">
-                        <Edit3 size={18} className="text-slate-400" /> Sửa chi tiết
-                    </button>
-                    <button onClick={() => { onTransfer(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-slate-700 hover:bg-gray-50 flex items-center gap-3 font-medium">
-                        <ArrowRightLeft size={18} className="text-slate-400" /> Chuyển phòng
-                    </button>
-                    
-                    {/* Severe Toggle in Menu */}
-                    <button 
-                         onClick={(e) => { e.stopPropagation(); onQuickSevereToggle && onQuickSevereToggle(patient.id); setShowMenu(false); }}
-                         className="w-full text-left px-4 py-3.5 text-sm hover:bg-gray-50 flex items-center gap-3 font-bold"
-                    >
-                        <AlertCircle size={18} className={patient.isSevere ? 'text-gray-400' : 'text-red-500'} /> 
-                        <span className={patient.isSevere ? 'text-slate-600' : 'text-red-600'}>
-                            {patient.isSevere ? 'Hủy Bệnh nặng' : 'Đánh dấu Bệnh nặng'}
-                        </span>
-                    </button>
-
-                    <div className="border-t border-gray-100 my-1"></div>
-                    <button onClick={() => { onToggleSurgery(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-orange-600 hover:bg-orange-50 flex items-center gap-3 font-bold">
-                        <Syringe size={18} /> {patient.isScheduledForSurgery ? 'Hủy lịch mổ' : 'Đăng ký mổ'}
-                    </button>
-                </div>
+            {/* --- Menu Portal --- */}
+            {showMenu && menuPosition && ReactDOM.createPortal(
+                 <div
+                    id={`menu-portal-${patient.id}`} // Add ID for click-outside check
+                    style={{
+                        position: 'fixed',
+                        top: `${menuPosition.top}px`,
+                        right: `${menuPosition.right}px`,
+                    }}
+                    className="bg-white/95 backdrop-blur-2xl shadow-2xl border border-gray-100 rounded-2xl py-2 w-60 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-black/5 z-[100]"
+                 >
+                     <button onClick={() => { onEdit(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-slate-700 hover:bg-gray-50 flex items-center gap-3 font-medium">
+                         <Edit3 size={18} className="text-slate-400" /> Sửa chi tiết
+                     </button>
+                     <button onClick={() => { onTransfer(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-slate-700 hover:bg-gray-50 flex items-center gap-3 font-medium">
+                         <ArrowRightLeft size={18} className="text-slate-400" /> Chuyển phòng
+                     </button>
+                     
+                     {/* Severe Toggle in Menu */}
+                     <button 
+                          onClick={(e) => { e.stopPropagation(); onQuickSevereToggle && onQuickSevereToggle(patient.id); setShowMenu(false); }}
+                          className="w-full text-left px-4 py-3.5 text-sm hover:bg-gray-50 flex items-center gap-3 font-bold"
+                     >
+                         <AlertCircle size={18} className={patient.isSevere ? 'text-gray-400' : 'text-red-500'} /> 
+                         <span className={patient.isSevere ? 'text-slate-600' : 'text-red-600'}>
+                             {patient.isSevere ? 'Hủy Bệnh nặng' : 'Đánh dấu Bệnh nặng'}
+                         </span>
+                     </button>
+ 
+                     <div className="border-t border-gray-100 my-1"></div>
+                     
+                     {(() => {
+                         const hasSurgeryDate = !!patient.surgeryDate && patient.surgeryDate.trim() !== '';
+ 
+                         if (hasSurgeryDate) {
+                             // Đã có ngày mổ -> Nút "Sửa lịch mổ"
+                             return (
+                                 <button onClick={() => { onEdit(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-orange-600 hover:bg-orange-50 flex items-center gap-3 font-bold">
+                                     <Syringe size={18} /> Sửa lịch mổ
+                                 </button>
+                             );
+                         } else if (patient.isScheduledForSurgery) {
+                             // Đã đăng ký nhưng chưa có ngày -> Nút "Hủy đăng ký"
+                             return (
+                                 <button onClick={() => { onCancelSurgery && onCancelSurgery(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-3 font-bold">
+                                     <Syringe size={18} /> Hủy đăng ký mổ
+                                 </button>
+                             );
+                         } else {
+                             // Chưa đăng ký -> Nút "Đăng ký mổ"
+                             return (
+                                 <button onClick={() => { onRegisterSurgery && onRegisterSurgery(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-3 font-bold">
+                                     <Syringe size={18} /> Đăng ký mổ
+                                 </button>
+                             );
+                         }
+                     })()}
+                 </div>,
+                 document.body
             )}
             
             {/* REMOVED: Fixed backdrop div causing stack issues */}

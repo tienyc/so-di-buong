@@ -2,6 +2,40 @@ import React, { useState, useEffect } from 'react';
 import { Patient } from '../types';
 import { X, Save, User, Activity, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 
+// Helper to format surgery time for input[type="time"]
+// Converts "1899-12-30T01:53:30.000Z" → "01:53"
+const formatSurgeryTimeForInput = (timeStr?: string): string => {
+    if (!timeStr) return '';
+    try {
+        // If it's already in HH:mm format, return as is
+        if (timeStr.includes(':') && timeStr.length <= 5 && !timeStr.includes('T')) {
+            return timeStr;
+        }
+        // If it's an ISO datetime string (from Google Sheets)
+        if (timeStr.includes('T')) {
+            const timePart = timeStr.split('T')[1];
+            if (timePart) {
+                const timeOnly = timePart.split('.')[0];
+                const [hour, minute] = timeOnly.split(':');
+                return `${hour}:${minute}`;
+            }
+        }
+        return timeStr;
+    } catch {
+        return '';
+    }
+};
+
+/**
+ * Normalizes a date string (potentially from Google Sheets) to 'YYYY-MM-DD' format.
+ * This avoids timezone issues by only considering the date part.
+ * Handles "2024-07-20T17:00:00.000Z" -> "2024-07-20".
+ */
+const normalizeDateString = (dateStr?: string): string => {
+    return dateStr ? dateStr.split('T')[0] : '';
+};
+
+
 interface PatientEditModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -29,12 +63,12 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                 gender: patient.gender,
                 roomNumber: patient.roomNumber,
                 diagnosis: patient.diagnosis,
-                historySummary: patient.historySummary,
-                admissionDate: patient.admissionDate,
+                historySummary: patient.historySummary,                
+                admissionDate: normalizeDateString(patient.admissionDate),
                 
                 // Surgery Fields
-                surgeryDate: patient.surgeryDate,
-                surgeryTime: patient.surgeryTime,
+                surgeryDate: normalizeDateString(patient.surgeryDate),
+                surgeryTime: formatSurgeryTimeForInput(patient.surgeryTime),
                 surgeryMethod: patient.surgeryMethod,
                 surgeonName: patient.surgeonName,
                 operatingRoom: patient.operatingRoom,
@@ -55,14 +89,21 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
 
     const changeSurgeryDate = (days: number) => {
         const current = formData.surgeryDate || new Date().toISOString().split('T')[0];
-        const date = new Date(current);
+        const date = new Date(current + 'T00:00:00'); // Add time to avoid timezone shifts on the date itself
         date.setDate(date.getDate() + days);
         handleChange('surgeryDate', date.toISOString().split('T')[0]);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(patient.id, formData);
+
+        // ✅ Ensure surgeryTime is in HH:mm format before saving
+        const cleanedData = {
+            ...formData,
+            surgeryTime: formData.surgeryTime ? formatSurgeryTimeForInput(formData.surgeryTime) : ''
+        };
+
+        onSave(patient.id, cleanedData);
         onClose();
     };
 

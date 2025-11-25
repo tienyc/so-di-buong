@@ -14,8 +14,23 @@
  * 9. Paste URL into SmartRound Settings → "Surgery Sheet URL"
  */
 
-const SECRET = 'so-di-buong-4.0-2025-quang-tri-xyz'; // Match with main app
-const SHEET_NAME = 'Sheet1'; // Change if your sheet has different name
+// ⚠️ Đổi tên biến để tránh xung đột với code cũ
+const SURGERY_SECRET = 'so-di-buong-4.0-2025-quang-tri-xyz'; // Match with main app
+const SURGERY_SHEET_NAME = 'Lịch mổ'; // ✅ Tên tab sheet lịch mổ của bạn
+
+/**
+ * TEST endpoint - để kiểm tra xem Apps Script đã deploy chưa
+ * Mở URL trong browser sẽ thấy thông báo này
+ */
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({
+    success: true,
+    message: '✅ Apps Script đã được deploy THÀNH CÔNG!',
+    timestamp: new Date().toISOString(),
+    sheetName: SURGERY_SHEET_NAME,
+    instructions: 'Để test đồng bộ, dùng POST request với action=SYNC_SURGERY'
+  })).setMimeType(ContentService.MimeType.JSON);
+}
 
 /**
  * Main endpoint - receives surgery data from SmartRound app
@@ -27,7 +42,7 @@ function doPost(e) {
     const { action, secret, data } = body;
 
     // Verify secret
-    if (secret !== SECRET) {
+    if (secret !== SURGERY_SECRET) {
       return ContentService.createTextOutput(JSON.stringify({
         success: false,
         error: 'Unauthorized'
@@ -65,9 +80,9 @@ function doPost(e) {
  * Sync single surgery entry
  */
 function syncSurgery(patient) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SURGERY_SHEET_NAME);
   if (!sheet) {
-    throw new Error('Sheet not found: ' + SHEET_NAME);
+    throw new Error('Sheet not found: ' + SURGERY_SHEET_NAME);
   }
 
   // Validate required fields
@@ -84,11 +99,15 @@ function syncSurgery(patient) {
   // Determine Sáng/Chiều
   const sangChieu = determineSangChieu(patient.surgeryTime);
 
+  // Parse dates properly
+  const parsedSurgeryDate = parseDateString(patient.surgeryDate);
+  const parsedSurgeryTime = parseTimeString(patient.surgeryTime);
+
   // Prepare row data (columns A-P)
   const rowData = [
     new Date(),                          // A: Dấu thời gian
-    patient.surgeryDate,                 // B: Ngày PT
-    patient.fullName,                    // C: Tên BN
+    parsedSurgeryDate,                   // B: Ngày PT (dd/MM/yyyy)
+    patient.fullName,                    // C: TênBN
     patient.diagnosis || '',             // D: Chẩn đoán
     patient.surgeryMethod || '',         // E: PPPT
     patient.surgeryClassification || '', // F: Phân loại
@@ -101,7 +120,7 @@ function syncSurgery(patient) {
     patient.anesthesiaMethod || '',      // M: Vô cảm
     patient.surgeryRequirements || '',   // N: Săng + Yêu cầu
     sangChieu,                           // O: Sáng/Chiều
-    patient.surgeryTime || ''            // P: Giờ PT (original format)
+    parsedSurgeryTime                    // P: Giờ PT (HH:mm format)
   ];
 
   if (existingRow) {
@@ -156,21 +175,31 @@ function syncBatch(patients) {
 /**
  * Find existing row by patient name + surgery date
  * Returns row number if found, null otherwise
+ * ✅ Cải thiện: Chuẩn hóa cả 2 bên về yyyy-MM-dd trước khi so sánh
  */
 function findExistingRow(sheet, fullName, surgeryDate) {
   const data = sheet.getDataRange().getValues();
+
+  // ✅ Chuẩn hóa surgeryDate từ request (có thể là "2025-11-25" hoặc "2025-11-25T17:00:00.000Z")
+  const normalizedSurgeryDate = surgeryDate.split('T')[0]; // Extract yyyy-MM-dd
 
   // Skip header row (index 0), start from row 1 (data)
   for (let i = 1; i < data.length; i++) {
     const rowName = data[i][2];     // Column C: Tên BN
     const rowDate = data[i][1];     // Column B: Ngày PT
 
-    // Convert date to string for comparison
-    const rowDateStr = rowDate instanceof Date
-      ? Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM-dd')
-      : String(rowDate);
+    // ✅ Chuẩn hóa date từ sheet về yyyy-MM-dd
+    let rowDateStr;
+    if (rowDate instanceof Date) {
+      rowDateStr = Utilities.formatDate(rowDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    } else if (typeof rowDate === 'string') {
+      rowDateStr = rowDate.split('T')[0]; // Extract yyyy-MM-dd nếu là ISO string
+    } else {
+      rowDateStr = String(rowDate);
+    }
 
-    if (rowName === fullName && rowDateStr === surgeryDate) {
+    // ✅ So sánh cả tên VÀ ngày (đã chuẩn hóa)
+    if (rowName === fullName && rowDateStr === normalizedSurgeryDate) {
       return i + 1; // Return 1-based row number
     }
   }
@@ -216,6 +245,91 @@ function determineSangChieu(time) {
   }
 
   return hour < 12 ? 'Sáng' : 'Chiều';
+}
+
+/**
+ * Parse date string to proper Date object
+ * Handles: "2025-11-24", "2025-11-24T17:00:00.000Z", "24/11/2025"
+ */
+function parseDateString(dateStr) {
+  if (!dateStr) return '';
+
+  try {
+    // If already a Date object
+    if (dateStr instanceof Date) return dateStr;
+
+    // Remove time part if ISO format
+    const dateOnly = dateStr.split('T')[0];
+
+    // Parse yyyy-MM-dd format
+    if (dateOnly.includes('-')) {
+      const parts = dateOnly.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
+        const day = parseInt(parts[2], 10);
+        return new Date(year, month, day);
+      }
+    }
+
+    // Parse dd/MM/yyyy format
+    if (dateOnly.includes('/')) {
+      const parts = dateOnly.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2], 10);
+        return new Date(year, month, day);
+      }
+    }
+
+    // Fallback: try to parse as is
+    return new Date(dateStr);
+  } catch (error) {
+    Logger.log('Error parsing date: ' + dateStr + ' - ' + error.message);
+    return '';
+  }
+}
+
+/**
+ * Parse time string to HH:mm format
+ * Handles: "08:30", "8h30", "2025-11-24T08:30:00.000Z"
+ */
+function parseTimeString(timeStr) {
+  if (!timeStr) return '';
+
+  try {
+    // If it's an ISO datetime string, extract time part
+    if (timeStr.includes('T')) {
+      const timePart = timeStr.split('T')[1];
+      if (timePart) {
+        const timeOnly = timePart.split('.')[0]; // Remove milliseconds
+        const [hour, minute] = timeOnly.split(':');
+        return hour + ':' + minute;
+      }
+    }
+
+    // If it's Vietnamese format "8h30"
+    if (timeStr.includes('h')) {
+      const parts = timeStr.split('h');
+      const hour = parts[0].padStart(2, '0');
+      const minute = parts[1] || '00';
+      return hour + ':' + minute;
+    }
+
+    // If it's already HH:mm format
+    if (timeStr.includes(':')) {
+      const parts = timeStr.split(':');
+      const hour = parts[0].padStart(2, '0');
+      const minute = parts[1] || '00';
+      return hour + ':' + minute;
+    }
+
+    return timeStr;
+  } catch (error) {
+    Logger.log('Error parsing time: ' + timeStr + ' - ' + error.message);
+    return '';
+  }
 }
 
 /**

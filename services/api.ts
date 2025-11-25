@@ -7,6 +7,7 @@ import {
   mapDropdownConfig,
   serializeWardToRaw,
   serializeDropdownToRaw,
+  serializePatientToRaw,
   SettingsPayload,
   WardConfig,
   DropdownConfig,
@@ -141,7 +142,8 @@ export async function fetchOrders(patientId: string): Promise<MedicalOrder[]> {
 
 // Lưu / cập nhật bệnh nhân
 export async function savePatient(patient: Patient): Promise<string> {
-  const data = await postJson<{ id: string }>('savePatient', { patient });
+  const raw = serializePatientToRaw(patient);
+  const data = await postJson<{ id: string }>('savePatient', { patient: raw });
   return data.id;
 }
 
@@ -160,7 +162,7 @@ export async function confirmDischarge(
     patient: {
       id: patientId,
       status: 'Đã lưu hồ sơ',
-      dischargeDate: actualDate,
+      plannedDischargeDate: actualDate,
     },
   };
 
