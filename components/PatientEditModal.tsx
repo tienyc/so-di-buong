@@ -2,23 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { Patient } from '../types';
 import { X, Save, User, Activity, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 
-// Helper to format surgery time for input[type="time"]
-// Converts "1899-12-30T01:53:30.000Z" → "01:53"
+// --- HELPER FUNCTIONS ---
+
+// Chuyển đổi giờ từ ISO hoặc dạng text sang HH:mm để hiển thị trong input time
 const formatSurgeryTimeForInput = (timeStr?: string): string => {
     if (!timeStr) return '';
     try {
-        // If it's already in HH:mm format, return as is
+        // Nếu đã là HH:mm
         if (timeStr.includes(':') && timeStr.length <= 5 && !timeStr.includes('T')) {
             return timeStr;
         }
-        // If it's an ISO datetime string (from Google Sheets)
+        // Nếu là ISO string (2024-11-26T08:30:00.000Z)
         if (timeStr.includes('T')) {
-            const timePart = timeStr.split('T')[1];
-            if (timePart) {
-                const timeOnly = timePart.split('.')[0];
-                const [hour, minute] = timeOnly.split(':');
-                return `${hour}:${minute}`;
-            }
+            const date = new Date(timeStr);
+            if (isNaN(date.getTime())) return '';
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
         }
         return timeStr;
     } catch {
@@ -26,22 +26,22 @@ const formatSurgeryTimeForInput = (timeStr?: string): string => {
     }
 };
 
-/**
- * Normalizes a date string (potentially from Google Sheets) to 'YYYY-MM-DD' format.
- * This avoids timezone issues by only considering the date part.
- * Handles "2024-07-20T17:00:00.000Z" -> "2024-07-20".
- */
+// Chuẩn hóa ngày về YYYY-MM-DD
 const normalizeDateString = (dateStr?: string): string => {
-    return dateStr ? dateStr.split('T')[0] : '';
+    if (!dateStr) return '';
+    try {
+        // Nếu là ISO string, cắt lấy phần ngày
+        if (dateStr.includes('T')) return dateStr.split('T')[0];
+        return dateStr;
+    } catch { return ''; }
 };
-
 
 interface PatientEditModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (id: string, updates: Partial<Patient>) => void;
     patient: Patient | null;
-    // Config Lists
+    // Config Lists (Cho phép undefined để tránh lỗi crash)
     doctors?: string[];
     operatingRooms?: string[];
     anesthesiaMethods?: string[];
@@ -55,31 +55,33 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
 }) => {
     const [formData, setFormData] = useState<Partial<Patient>>({});
 
+    // Reset form khi mở modal hoặc đổi bệnh nhân
     useEffect(() => {
         if (patient) {
             setFormData({
-                fullName: patient.fullName,
+                fullName: patient.fullName || '',
                 age: patient.age,
                 gender: patient.gender,
-                roomNumber: patient.roomNumber,
-                diagnosis: patient.diagnosis,
-                historySummary: patient.historySummary,                
+                roomNumber: patient.roomNumber || '',
+                diagnosis: patient.diagnosis || '',
+                historySummary: patient.historySummary || '',                
                 admissionDate: normalizeDateString(patient.admissionDate),
                 
                 // Surgery Fields
                 surgeryDate: normalizeDateString(patient.surgeryDate),
                 surgeryTime: formatSurgeryTimeForInput(patient.surgeryTime),
-                surgeryMethod: patient.surgeryMethod,
-                surgeonName: patient.surgeonName,
-                operatingRoom: patient.operatingRoom,
-                anesthesiaMethod: patient.anesthesiaMethod,
-                surgeryClassification: patient.surgeryClassification,
-                surgeryRequirements: patient.surgeryRequirements,
+                surgeryMethod: patient.surgeryMethod || '',
+                surgeonName: patient.surgeonName || '',
+                operatingRoom: patient.operatingRoom || '',
+                anesthesiaMethod: patient.anesthesiaMethod || '',
+                surgeryClassification: patient.surgeryClassification || '',
+                surgeryRequirements: patient.surgeryRequirements || '',
 
                 isSevere: patient.isSevere || false,
+                dischargeDate: normalizeDateString(patient.dischargeDate),
             });
         }
-    }, [patient]);
+    }, [patient, isOpen]);
 
     if (!isOpen || !patient) return null;
 
@@ -87,59 +89,68 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
+    // --- FIX LỖI TĂNG GIẢM NGÀY ---
     const changeSurgeryDate = (days: number) => {
-        const current = formData.surgeryDate || new Date().toISOString().split('T')[0];
-        const date = new Date(current + 'T00:00:00'); // Add time to avoid timezone shifts on the date itself
-        date.setDate(date.getDate() + days);
-        handleChange('surgeryDate', date.toISOString().split('T')[0]);
+        // 1. Lấy ngày hiện tại trong form, nếu không có thì lấy ngày hôm nay
+        let dateObj = formData.surgeryDate ? new Date(formData.surgeryDate) : new Date();
+        
+        // 2. Cộng/Trừ ngày
+        dateObj.setDate(dateObj.getDate() + days);
+
+        // 3. Format thủ công YYYY-MM-DD để tránh lệch múi giờ khi dùng toISOString()
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        
+        handleChange('surgeryDate', `${y}-${m}-${d}`);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-
-        // ✅ Ensure surgeryTime is in HH:mm format before saving
+        // Giữ nguyên logic cũ
         const cleanedData = {
             ...formData,
             surgeryTime: formData.surgeryTime ? formatSurgeryTimeForInput(formData.surgeryTime) : ''
         };
-
         onSave(patient.id, cleanedData);
         onClose();
     };
 
-    // Generic CSS for inputs to ensure they aren't transparent/black
-    const inputClass = "w-full bg-white border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-medical-500 outline-none text-slate-900";
+    const inputClass = "w-full bg-white border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-medical-500 outline-none text-slate-900 text-sm";
+    const labelClass = "block text-[10px] font-bold text-gray-500 uppercase mb-1";
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="bg-slate-800 p-4 flex justify-between items-center text-white shrink-0">
-                    <h3 className="font-bold text-lg flex items-center gap-2">
-                        <User size={20} /> Sửa Hồ Sơ / Lên Lịch Mổ
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
+                
+                {/* Header */}
+                <div className="bg-slate-800 px-4 py-3 flex justify-between items-center text-white shrink-0">
+                    <h3 className="font-bold text-base flex items-center gap-2">
+                        <User size={18} /> Sửa Hồ Sơ: {patient.fullName}
                     </h3>
                     <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-full transition-colors"><X size={20} /></button>
                 </div>
                 
-                <form onSubmit={handleSubmit} className="p-5 space-y-5 overflow-y-auto">
+                {/* Form Body */}
+                <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto custom-scrollbar">
                     
-                    {/* Removed Severe Toggle as requested */}
-
-                    <div className="grid grid-cols-1 gap-4">
+                    {/* Thông tin hành chính */}
+                    <div className="grid grid-cols-1 gap-3">
                          <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Họ và tên</label>
+                            <label className={labelClass}>Họ và tên</label>
                             <input 
                                 type="text" 
                                 required
                                 value={formData.fullName || ''}
                                 onChange={(e) => handleChange('fullName', e.target.value)}
-                                className={inputClass}
+                                className={`${inputClass} font-bold`}
                             />
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tuổi</label>
+                    <div className="grid grid-cols-4 gap-3">
+                        <div className="col-span-2">
+                            <label className={labelClass}>Tuổi</label>
                             <input 
                                 type="number" 
                                 value={formData.age || ''}
@@ -147,8 +158,8 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                                 className={inputClass}
                             />
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phòng</label>
+                        <div className="col-span-2">
+                            <label className={labelClass}>Phòng</label>
                             <input 
                                 type="text" 
                                 value={formData.roomNumber || ''}
@@ -156,11 +167,10 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                                 className={inputClass}
                             />
                         </div>
-                        {/* Bed Number Removed */}
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Chẩn đoán</label>
+                        <label className={labelClass}>Chẩn đoán</label>
                         <textarea 
                             rows={2}
                             required
@@ -170,45 +180,58 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                         />
                     </div>
                     
-                    <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 space-y-4">
-                        <div className="flex items-center gap-2 text-blue-800 font-bold text-sm border-b border-blue-200 pb-2">
-                            <Activity size={16}/> Lên Lịch Phẫu Thuật (Xếp Lịch)
+                    {/* Ngày ra viện */}
+                    <div>
+                        <label className={labelClass}>Dự kiến ra viện</label>
+                        <input 
+                            type="date" 
+                            value={formData.dischargeDate || ''}
+                            onChange={(e) => handleChange('dischargeDate', e.target.value)}
+                            className={inputClass}
+                        />
+                    </div>
+
+                    {/* Khu vực Lịch mổ */}
+                    <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100 space-y-3">
+                        <div className="flex items-center gap-2 text-blue-800 font-bold text-xs border-b border-blue-200 pb-1.5 mb-1">
+                            <Activity size={14}/> THÔNG TIN PHẪU THUẬT
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3">
+                        {/* Ngày giờ mổ + Nút tăng giảm */}
+                        <div className="grid grid-cols-3 gap-2">
                             <div className="col-span-3 sm:col-span-2">
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Ngày mổ</label>
+                                <label className={labelClass}>Ngày mổ</label>
                                 <div className="flex items-center gap-1">
-                                    <button type="button" onClick={() => changeSurgeryDate(-1)} className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 active:scale-95 shrink-0">
+                                    <button type="button" onClick={() => changeSurgeryDate(-1)} className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 active:scale-95 shrink-0 transition-colors">
                                         <ChevronLeft size={16} className="text-gray-600"/>
                                     </button>
                                     <input 
                                         type="date" 
                                         value={formData.surgeryDate || ''}
                                         onChange={(e) => handleChange('surgeryDate', e.target.value)}
-                                        className={`${inputClass} text-center text-sm font-bold min-w-0`}
+                                        className={`${inputClass} text-center font-bold min-w-0`}
                                     />
-                                    <button type="button" onClick={() => changeSurgeryDate(1)} className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 active:scale-95 shrink-0">
+                                    <button type="button" onClick={() => changeSurgeryDate(1)} className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 active:scale-95 shrink-0 transition-colors">
                                         <ChevronRight size={16} className="text-gray-600"/>
                                     </button>
                                 </div>
                             </div>
                             <div className="col-span-3 sm:col-span-1">
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Giờ (Dự kiến)</label>
+                                <label className={labelClass}>Giờ (Dự kiến)</label>
                                 <div className="relative">
                                     <input 
                                         type="time" 
                                         value={formData.surgeryTime || ''}
                                         onChange={(e) => handleChange('surgeryTime', e.target.value)}
-                                        className={`${inputClass} text-sm pl-8`}
+                                        className={`${inputClass} pl-8`}
                                     />
-                                    <Clock size={14} className="absolute left-2.5 top-3 text-gray-400"/>
+                                    <Clock size={14} className="absolute left-2.5 top-2.5 text-gray-400"/>
                                 </div>
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Phương pháp PT (Tên mổ)</label>
+                            <label className={labelClass}>Phương pháp (Tên mổ)</label>
                             <input 
                                 type="text"
                                 placeholder="VD: Nội soi cắt ruột thừa..." 
@@ -218,71 +241,71 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                             />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Phẫu thuật viên</label>
+                                <label className={labelClass}>Phẫu thuật viên</label>
                                 <select 
                                     value={formData.surgeonName || ''}
                                     onChange={(e) => handleChange('surgeonName', e.target.value)}
                                     className={inputClass}
                                 >
                                     <option value="">-- Chọn BS --</option>
-                                    {doctors.map(d => <option key={d} value={d}>{d}</option>)}
+                                    {doctors.map((d, idx) => <option key={idx} value={d}>{d}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Phòng mổ</label>
+                                <label className={labelClass}>Phòng mổ</label>
                                 <select 
                                     value={formData.operatingRoom || ''}
                                     onChange={(e) => handleChange('operatingRoom', e.target.value)}
                                     className={inputClass}
                                 >
                                     <option value="">-- Chọn --</option>
-                                    {operatingRooms.map(r => <option key={r} value={r}>{r}</option>)}
+                                    {operatingRooms.map((r, idx) => <option key={idx} value={r}>{r}</option>)}
                                 </select>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2">
                              <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">PP Vô cảm</label>
+                                <label className={labelClass}>Vô cảm</label>
                                 <select 
                                     value={formData.anesthesiaMethod || ''}
                                     onChange={(e) => handleChange('anesthesiaMethod', e.target.value)}
                                     className={inputClass}
                                 >
                                     <option value="">-- Chọn --</option>
-                                    {anesthesiaMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                                    {anesthesiaMethods.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Phân loại</label>
+                                <label className={labelClass}>Phân loại</label>
                                 <select 
                                     value={formData.surgeryClassification || ''}
                                     onChange={(e) => handleChange('surgeryClassification', e.target.value)}
                                     className={inputClass}
                                 >
                                     <option value="">-- Chọn --</option>
-                                    {surgeryClassifications.map(c => <option key={c} value={c}>{c}</option>)}
+                                    {surgeryClassifications.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
                                 </select>
                             </div>
                         </div>
 
                          <div>
-                            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Yêu cầu dụng cụ</label>
+                            <label className={labelClass}>Yêu cầu dụng cụ</label>
                             <select 
                                 value={formData.surgeryRequirements || ''}
                                 onChange={(e) => handleChange('surgeryRequirements', e.target.value)}
                                 className={inputClass}
                             >
                                 <option value="">-- Chọn yêu cầu --</option>
-                                {surgeryRequirements.map(r => <option key={r} value={r}>{r}</option>)}
+                                {surgeryRequirements.map((r, idx) => <option key={idx} value={r}>{r}</option>)}
                             </select>
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Diễn biến / Tình trạng</label>
+                        <label className={labelClass}>Diễn biến / Tình trạng</label>
                         <textarea 
                             rows={3}
                             value={formData.historySummary || ''}
@@ -290,13 +313,11 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                             className={inputClass}
                         />
                     </div>
-                    
-                    {/* Admission Date (Optional to keep or remove, user said remove "Bed" and "Severe", but admission date was removed in previous turn from UI) */}
 
-                    <div className="pt-2">
+                    <div className="pt-2 sticky bottom-0 bg-white pb-2">
                         <button 
                             type="submit" 
-                            className="w-full bg-slate-800 text-white py-3.5 rounded-xl hover:bg-slate-900 flex items-center justify-center gap-2 font-bold shadow-lg shadow-slate-800/20 active:scale-95 transition-all"
+                            className="w-full bg-slate-800 text-white py-3 rounded-xl hover:bg-slate-900 flex items-center justify-center gap-2 font-bold shadow-lg shadow-slate-800/20 active:scale-95 transition-all"
                         >
                             <Save size={18} /> Lưu Thay Đổi
                         </button>

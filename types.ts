@@ -1,4 +1,3 @@
-
 export enum OrderType {
     MEDICATION = 'Thuốc',
     LAB = 'Xét nghiệm',

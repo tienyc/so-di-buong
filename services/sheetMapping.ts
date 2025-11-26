@@ -72,7 +72,7 @@ const normalizeOrderStatus = (value?: string): OrderStatus => {
 };
 
 export const mapRawPatient = (raw: RawPatient): Patient => {
-    const hasSurgeryDate = !!raw.surgeryDate && raw.surgeryDate.trim() !== '';
+    const hasSurgeryDate = !!raw.surgeryDate && String(raw.surgeryDate).trim() !== '';
     // ✅ Nếu có ngày mổ, bệnh nhân sẽ luôn được coi là đã đăng ký mổ.
     // Ngược lại, sẽ dùng giá trị từ cột trong sheet.
     const isScheduled = hasSurgeryDate || parseBoolean(raw.isScheduledForSurgery);

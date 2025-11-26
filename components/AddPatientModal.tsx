@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Patient, PatientStatus, RoomBlock } from '../types';
 import { X, Plus, Sparkles, Loader2, PenTool, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';

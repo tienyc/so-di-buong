@@ -3,31 +3,18 @@ import { Patient } from '../types';
 const API_SECRET = 'so-di-buong-4.0-2025-quang-tri-xyz';
 
 /**
- * Get surgery sheet URL from environment or localStorage
- */
-const getSurgerySheetUrl = (): string => {
-  // Try environment variable first (for production)
-  const envUrl = import.meta.env.VITE_SURGERY_SHEET_URL;
-  if (envUrl) return envUrl;
-
-  // Fallback to localStorage
-  const storageKey = 'smartround_v5_surgery_sheet_url';
-  return localStorage.getItem(storageKey) || '';
-};
-
-/**
- * Check if auto-sync is enabled
- */
-const isAutoSyncEnabled = (): boolean => {
-  const storageKey = 'smartround_v5_surgery_auto_sync';
-  const value = localStorage.getItem(storageKey);
-  return value !== 'false'; // Enabled by default
-};
-
-/**
  * Sync single patient's surgery info to department sheet
+ * ✅ NHẬN URL TRỰC TIẾP
  */
-export const syncSurgeryToKhoa = async (patient: Patient): Promise<{ success: boolean; message?: string; error?: string }> => {
+export const syncSurgeryToKhoa = async (surgerySheetUrl: string, patient: Patient): Promise<{ success: boolean; message?: string; error?: string }> => {
+  // Check if URL is configured
+  if (!surgerySheetUrl) {
+    return {
+      success: false,
+      error: 'Chưa cấu hình URL sheet lịch mổ khoa'
+    };
+  }
+  
   // Validate patient has required surgery info - CHỈ CẦN NGÀY MỔ
   if (!patient.surgeryDate) {
     return {
@@ -36,22 +23,7 @@ export const syncSurgeryToKhoa = async (patient: Patient): Promise<{ success: bo
     };
   }
 
-  // Check if auto-sync is enabled
-  if (!isAutoSyncEnabled()) {
-    return {
-      success: false,
-      error: 'Tự động đồng bộ đã tắt'
-    };
-  }
-
-  // Get surgery sheet URL
-  const surgerySheetUrl = getSurgerySheetUrl();
-  if (!surgerySheetUrl) {
-    return {
-      success: false,
-      error: 'Chưa cấu hình URL sheet lịch mổ khoa'
-    };
-  }
+  // NOTE: Logic isAutoSyncEnabled (tự động đồng bộ) đã được chuyển sang App.tsx để kiểm tra trước khi gọi hàm này.
 
   try {
     const response = await fetch(surgerySheetUrl, {
@@ -107,8 +79,18 @@ export const syncSurgeryToKhoa = async (patient: Patient): Promise<{ success: bo
 
 /**
  * Sync multiple patients' surgery info in batch
+ * ✅ NHẬN URL TRỰC TIẾP
  */
-export const syncBatchSurgeries = async (patients: Patient[]): Promise<{ success: boolean; total: number; successCount: number; message?: string; error?: string }> => {
+export const syncBatchSurgeries = async (surgerySheetUrl: string, patients: Patient[]): Promise<{ success: boolean; total: number; successCount: number; message?: string; error?: string }> => {
+  if (!surgerySheetUrl) {
+    return {
+      success: false,
+      total: patients.length,
+      successCount: 0,
+      error: 'Chưa cấu hình URL sheet lịch mổ khoa'
+    };
+  }
+
   // Filter patients with surgery date - CHỈ CẦN NGÀY MỔ
   const validPatients = patients.filter(p => p.surgeryDate);
 
@@ -118,17 +100,6 @@ export const syncBatchSurgeries = async (patients: Patient[]): Promise<{ success
       total: 0,
       successCount: 0,
       error: 'Không có ca mổ nào có đầy đủ thông tin để đồng bộ'
-    };
-  }
-
-  // Get surgery sheet URL
-  const surgerySheetUrl = getSurgerySheetUrl();
-  if (!surgerySheetUrl) {
-    return {
-      success: false,
-      total: 0,
-      successCount: 0,
-      error: 'Chưa cấu hình URL sheet lịch mổ khoa'
     };
   }
 
@@ -194,9 +165,9 @@ export const syncBatchSurgeries = async (patients: Patient[]): Promise<{ success
 
 /**
  * Test connection to surgery sheet
+ * ✅ NHẬN URL TRỰC TIẾP
  */
-export const testSurgerySheetConnection = async (): Promise<{ success: boolean; message?: string; error?: string }> => {
-  const surgerySheetUrl = getSurgerySheetUrl();
+export const testSurgerySheetConnection = async (surgerySheetUrl: string): Promise<{ success: boolean; message?: string; error?: string }> => {
   if (!surgerySheetUrl) {
     return {
       success: false,
@@ -220,7 +191,7 @@ export const testSurgerySheetConnection = async (): Promise<{ success: boolean; 
         'Content-Type': 'text/plain',
       },
       body: JSON.stringify({
-        action: 'SYNC_SURGERY',
+        action: 'TEST_CONNECTION', // Đã đổi action thành TEST_CONNECTION
         secret: API_SECRET,
         data: testPatient
       })
