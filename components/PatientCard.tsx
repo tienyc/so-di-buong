@@ -30,6 +30,15 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         const today = new Date();
         return today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
     }, []);
+
+    // Normalize date string to YYYY-MM-DD format (remove time component)
+    const normalizeDateString = (dateStr: string): string => {
+        if (!dateStr) return '';
+        // If already in YYYY-MM-DD format, return as-is
+        if (dateStr.length === 10 && !dateStr.includes('T')) return dateStr;
+        // Extract date part from ISO string
+        return dateStr.split('T')[0];
+    };
     
     // --- SAFE DATA HELPERS (Vệ sĩ dữ liệu) ---
     // Hàm này đảm bảo giá trị luôn là chuỗi, tránh lỗi .split() is not a function
@@ -92,13 +101,18 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
     const pendingOrders = ordersSafe.filter(o => o.status === OrderStatus.PENDING);
     
     const todayOrders = pendingOrders.filter(o => {
-        const d = safeString(o.executionDate);
-        return d.includes(todayStr);
+        const d = normalizeDateString(safeString(o.executionDate));
+        return d === todayStr;
     });
-    
+
     const upcomingOrders = pendingOrders.filter(o => {
-        const d = safeString(o.executionDate);
-        return d > todayStr; // Chuỗi ISO so sánh được
+        const d = normalizeDateString(safeString(o.executionDate));
+        return d > todayStr; // Only dates AFTER today
+    }).sort((a, b) => {
+        // Sort by execution date ascending (closest dates first)
+        const dateA = normalizeDateString(safeString(a.executionDate));
+        const dateB = normalizeDateString(safeString(b.executionDate));
+        return dateA.localeCompare(dateB);
     });
 
     const hasPendingOrders = pendingOrders.length > 0;
@@ -457,14 +471,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                         </div>
                     )}
 
-                    {showDischargeConfirm ? (
-                         <button
-                            onClick={() => onConfirmDischarge && onConfirmDischarge(patient.id)}
-                            className="w-full bg-green-600 text-white py-4 rounded-2xl text-sm font-bold hover:bg-green-700 shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
-                        >
-                            <LogOut size={20} /> Xác nhận Đã Ra Viện
-                        </button>
-                    ) : !isDischarged && (
+                    {!isDischarged && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onAddOrder(patient.id); }}
                             className="w-full bg-medical-500 text-white py-4 rounded-2xl text-sm font-bold hover:bg-medical-600 shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all mt-6"

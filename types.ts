@@ -66,6 +66,7 @@ export interface Patient {
     isSevere: boolean; // Bệnh nặng cần theo dõi
     status: PatientStatus;
     dischargeDate?: string; // Scheduled or actual discharge date
+    dischargeConfirmed?: boolean; // Confirmed discharge from hospital
 }
 
 export interface RoomBlock {

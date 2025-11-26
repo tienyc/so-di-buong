@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, SettingsPayload } from './types'; 
+import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, OrderType } from './types'; 
 import { fetchAllData, savePatient, saveOrder, confirmDischarge, fetchSettings } from './services/api';
 import { buildRoomBlocksFromConfig, WardConfig } from './services/sheetMapping';
 import { syncSurgeryToKhoa } from './services/surgerySync';
@@ -48,9 +48,18 @@ const formatSurgeryTime = (timeStr?: string): string => {
         if (timeStr.includes('h')) return timeStr;
         if (timeStr.includes(':') && timeStr.length <= 5 && !timeStr.includes('T')) return timeStr;
         const date = new Date(timeStr);
-        if (isNaN(date.getTime())) return timeStr; 
+        if (isNaN(date.getTime())) return timeStr;
         return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
     } catch { return ''; }
+};
+
+const formatDateVN = (isoDate?: string): string => {
+    if (!isoDate) return '';
+    const parts = isoDate.split('T')[0].split('-');
+    if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return isoDate;
 };
 // --- END HELPER FUNCTIONS ---
 
@@ -96,7 +105,7 @@ const App: React.FC = () => {
 
     const [surgeryTab, setSurgeryTab] = useState<'WAITING' | 'SCHEDULED'>('WAITING');
     const [expandedSurgeryGroups, setExpandedSurgeryGroups] = useState<{[key: string]: boolean}>({ 'today': true, 'tomorrow': true, 'upcoming': true });
-    const [expandedDischargeGroups, setExpandedDischargeGroups] = useState<{[key: string]: boolean}>({ 'today': true, 'tomorrow': true, 'upcoming': true });
+    const [expandedDischargeGroups, setExpandedDischargeGroups] = useState<{[key: string]: boolean}>({ 'today': true, 'tomorrow': true, 'upcoming': true, 'overdue': true });
 
     // --- LOGIC: DATE FILTER UI (Tăng/Giảm/Format) ---
     const handleShiftDate = (days: number) => {
@@ -221,21 +230,50 @@ const App: React.FC = () => {
 
     const handleAddOrder = async (orderData: Omit<MedicalOrder, 'id'>, isDischarge: boolean, dischargeDate?: string) => {
         if (!selectedPatientId) return;
-        const newOrder: MedicalOrder = { ...orderData, id: Math.random().toString(36).substr(2, 9) };
-        const updatedRooms = rooms.map(b => ({
-            ...b,
-            patients: b.patients.map(p => {
-                if(p.id === selectedPatientId) {
-                    const nextP = { ...p, orders: [newOrder, ...p.orders] };
-                    if(isDischarge && dischargeDate) nextP.dischargeDate = dischargeDate;
-                    savePatient(nextP);
-                    return nextP;
-                }
-                return p;
-            })
-        }));
-        setRooms(updatedRooms);
-        setNotification({ message: 'Đã thêm y lệnh', type: 'success' });
+
+        try {
+            const newOrder: MedicalOrder = {
+                ...orderData,
+                id: Math.random().toString(36).substr(2, 9)
+            };
+
+            // Find and update patient
+            let updatedPatient: Patient | null = null;
+            const updatedRooms = rooms.map(b => ({
+                ...b,
+                patients: b.patients.map(p => {
+                    if(p.id === selectedPatientId) {
+                        // Filter out old discharge orders if this is a discharge order (keep only the latest)
+                        const existingOrders = isDischarge
+                            ? (p.orders || []).filter(o => o.type !== OrderType.DISCHARGE)
+                            : (p.orders || []);
+
+                        const nextP = {
+                            ...p,
+                            orders: [newOrder, ...existingOrders]
+                        };
+                        if(isDischarge && dischargeDate) {
+                            nextP.dischargeDate = dischargeDate;
+                        }
+                        updatedPatient = nextP;
+                        return nextP;
+                    }
+                    return p;
+                })
+            }));
+
+            // Save to Firebase FIRST
+            if (updatedPatient) {
+                await savePatient(updatedPatient);
+            }
+
+            // Then update UI state
+            setRooms(updatedRooms);
+            setNotification({ message: 'Đã thêm y lệnh', type: 'success' });
+        } catch (error) {
+            console.error('Error adding order:', error);
+            setNotification({ message: 'Lỗi thêm y lệnh', type: 'error' });
+        }
     };
 
     const handleToggleCompleteOrder = (pid: string, oid: string) => {
@@ -245,7 +283,7 @@ const App: React.FC = () => {
                 if (p.id === pid) {
                     const nextP = {
                         ...p,
-                        orders: p.orders.map(o => o.id === oid ? { ...o, status: o.status === OrderStatus.COMPLETED ? OrderStatus.PENDING : OrderStatus.COMPLETED } : o)
+                        orders: (p.orders || []).map(o => o.id === oid ? { ...o, status: o.status === OrderStatus.COMPLETED ? OrderStatus.PENDING : OrderStatus.COMPLETED } : o)
                     };
                     savePatient(nextP);
                     return nextP;
@@ -269,6 +307,43 @@ const App: React.FC = () => {
         }
     };
 
+    // NEW: Cancel discharge (patient stays)
+    const handleCancelDischarge = async (id: string) => {
+        if (window.confirm('Xác nhận bệnh nhân tiếp tục nằm viện?')) {
+            try {
+                await handleUpdatePatient(id, { dischargeDate: '' });
+                setNotification({ message: 'Đã hủy lịch ra viện', type: 'success' });
+                await loadDataFromSheet();
+            } catch {
+                setNotification({ message: 'Lỗi hủy lịch ra viện', type: 'error' });
+            }
+        }
+    };
+
+    // NEW: Batch confirm all discharges in a group
+    const handleBatchConfirmDischarges = async (patients: Patient[]) => {
+        const count = patients.length;
+        if (window.confirm(`Xác nhận ${count} bệnh nhân đã ra viện?`)) {
+            try {
+                await Promise.all(
+                    patients.map(p =>
+                        confirmDischarge(p.id, p.dischargeDate || new Date().toISOString().split('T')[0])
+                    )
+                );
+                setNotification({
+                    message: `Đã xác nhận ${count} bệnh nhân ra viện`,
+                    type: 'success'
+                });
+                await loadDataFromSheet();
+            } catch {
+                setNotification({
+                    message: 'Lỗi xác nhận hàng loạt',
+                    type: 'error'
+                });
+            }
+        }
+    };
+
     const handleTransferConfirm = async (targetRoomId?: string, targetRoomNumber?: string, notes?: string, date?: string) => {
         if (!selectedPatientId) return;
         if (transferMode === 'TRANSFER' && targetRoomId) {
@@ -281,7 +356,15 @@ const App: React.FC = () => {
                 loadDataFromSheet();
             }
         } else {
-             handleUpdatePatient(selectedPatientId, { dischargeDate: date });
+            // DISCHARGE MODE
+            try {
+                await handleUpdatePatient(selectedPatientId, { dischargeDate: date });
+                setNotification({ message: 'Đã đặt lịch ra viện', type: 'success' });
+                await loadDataFromSheet();
+            } catch (error) {
+                console.error('Error setting discharge date:', error);
+                setNotification({ message: 'Lỗi đặt lịch ra viện', type: 'error' });
+            }
         }
     };
 
@@ -329,13 +412,14 @@ const App: React.FC = () => {
     }, [filteredPatients]);
 
     const dischargeGroups = useMemo(() => {
-        if (currentView !== AppView.DISCHARGE_LIST) return { today: [], tomorrow: [], upcoming: [] };
+        if (currentView !== AppView.DISCHARGE_LIST) return { today: [], tomorrow: [], upcoming: [], overdue: [] };
         const today = new Date().toISOString().split('T')[0];
         const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
         return {
             today: filteredPatients.filter(p => normalizeDateString(p.dischargeDate) === today),
             tomorrow: filteredPatients.filter(p => normalizeDateString(p.dischargeDate) === tomorrow),
-            upcoming: filteredPatients.filter(p => normalizeDateString(p.dischargeDate) > tomorrow).sort((a,b) => (a.dischargeDate||'').localeCompare(b.dischargeDate||''))
+            upcoming: filteredPatients.filter(p => normalizeDateString(p.dischargeDate) > tomorrow).sort((a,b) => (a.dischargeDate||'').localeCompare(b.dischargeDate||'')),
+            overdue: filteredPatients.filter(p => normalizeDateString(p.dischargeDate) < today).sort((a,b) => (a.dischargeDate||'').localeCompare(b.dischargeDate||''))
         };
     }, [filteredPatients, currentView]);
 
@@ -539,27 +623,89 @@ const App: React.FC = () => {
                                 
                                 {currentView === AppView.DISCHARGE_LIST && (
                                     <div className="space-y-4">
-                                        {filteredPatients.length === 0 ? <div className="text-center py-12 text-gray-400">Không có bệnh nhân ra viện.</div> : (
-                                            ['today', 'tomorrow', 'upcoming'].map(key => {
+                                        {filteredPatients.length === 0 ? (
+                                            <div className="text-center py-12 text-gray-400">Không có bệnh nhân ra viện.</div>
+                                        ) : (
+                                            ['today', 'tomorrow', 'upcoming', 'overdue'].map(key => {
                                                 const groupKey = key as keyof typeof dischargeGroups;
                                                 const list = dischargeGroups[groupKey];
-                                                const label = key === 'today' ? 'Hôm nay' : key === 'tomorrow' ? 'Ngày mai' : 'Sắp tới';
-                                                const color = key === 'today' ? 'green' : key === 'tomorrow' ? 'blue' : 'gray';
+
+                                                // Labels and colors
+                                                const groupConfig = {
+                                                    today: { label: 'Hôm nay', color: 'green', showBatchConfirm: true },
+                                                    tomorrow: { label: 'Ngày mai', color: 'blue', showBatchConfirm: false },
+                                                    upcoming: { label: 'Sắp tới', color: 'gray', showBatchConfirm: false },
+                                                    overdue: { label: 'Quá hạn', color: 'red', showBatchConfirm: true }
+                                                };
+
+                                                const config = groupConfig[groupKey];
                                                 const isOpen = expandedDischargeGroups[groupKey];
 
+                                                if (list.length === 0) return null;  // Skip empty groups
+
                                                 return (
-                                                    <div key={key} className={`bg-white/80 backdrop-blur-sm rounded-2xl border border-${color}-200 shadow-soft overflow-hidden`}>
-                                                        <div className={`bg-${color}-50/50 p-4 flex justify-between items-center cursor-pointer`} onClick={() => setExpandedDischargeGroups(prev => ({...prev, [key]: !prev[groupKey]}))}>
-                                                            <h3 className={`font-bold text-${color}-800 flex items-center gap-2`}><Calendar size={20}/> {label} ({list.length})</h3>
-                                                            {isOpen ? <ChevronUp size={20} className={`text-${color}-400`}/> : <ChevronDown size={20} className={`text-${color}-400`}/>}
+                                                    <div key={key} className={`bg-white/80 backdrop-blur-sm rounded-2xl border border-${config.color}-200 shadow-soft overflow-hidden`}>
+                                                        {/* Group Header with Batch Confirm Button */}
+                                                        <div className={`bg-${config.color}-50/50 p-4 flex justify-between items-center`}>
+                                                            <div
+                                                                className="flex items-center gap-2 cursor-pointer flex-1"
+                                                                onClick={() => setExpandedDischargeGroups(prev => ({
+                                                                    ...prev,
+                                                                    [key]: !prev[groupKey]
+                                                                }))}
+                                                            >
+                                                                <h3 className={`font-bold text-${config.color}-800 flex items-center gap-2`}>
+                                                                    <Calendar size={20}/> {config.label} ({list.length})
+                                                                </h3>
+                                                                {isOpen ?
+                                                                    <ChevronUp size={20} className={`text-${config.color}-400`}/> :
+                                                                    <ChevronDown size={20} className={`text-${config.color}-400`}/>
+                                                                }
+                                                            </div>
+
+                                                            {/* Batch Confirm Button */}
+                                                            {config.showBatchConfirm && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleBatchConfirmDischarges(list);
+                                                                    }}
+                                                                    className={`ml-3 px-4 py-2 bg-${config.color}-600 text-white rounded-lg text-sm font-bold hover:bg-${config.color}-700 active:scale-95 transition-all shadow-md`}
+                                                                >
+                                                                    Xác nhận toàn bộ
+                                                                </button>
+                                                            )}
                                                         </div>
+
+                                                        {/* Patient Cards - SURGERY SCHEDULE PATTERN */}
                                                         {isOpen && list.length > 0 && (
                                                             <div className="p-3 space-y-3">
-                                                                {list.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelSurgery(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} showDischargeConfirm={key === 'today'} onConfirmDischarge={handleConfirmDischarge} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
+                                                                {list.map(p => (
+                                                                    <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-gray-100 relative">
+                                                                        {/* Patient Info */}
+                                                                        <div className="flex-1">
+                                                                            <div className="font-bold text-slate-800">{p.fullName}</div>
+                                                                            <div className="text-sm text-gray-600">
+                                                                                Phòng {p.roomNumber} • {p.ward}
+                                                                            </div>
+                                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                                Dự kiến: {formatDateVN(p.dischargeDate)}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* "Ở LẠI" BUTTON - Same position as "Sửa" in surgery */}
+                                                                        <button
+                                                                            onClick={() => handleCancelDischarge(p.id)}
+                                                                            className="absolute bottom-3 right-3 text-sm px-3 py-2 rounded-lg font-bold bg-orange-100 text-orange-600 hover:bg-orange-200 active:scale-95 transition-all"
+                                                                        >
+                                                                            Ở lại
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
                                                             </div>
                                                         )}
                                                     </div>
-                                                )
+                                                );
                                             })
                                         )}
                                     </div>
@@ -601,7 +747,7 @@ const App: React.FC = () => {
                                                                          <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-gray-100 relative">
                                                                              <div className="flex flex-col items-center justify-center w-14 border-r border-gray-100 pr-3"><span className="text-xl font-bold text-orange-500">{formatSurgeryTime(p.surgeryTime) || '--:--'}</span></div>
                                                                              <div className="flex-1"><div className="font-bold text-slate-800">{p.fullName}</div><div className="text-sm text-gray-600">{p.surgeryMethod}</div>{p.surgeonName && <div className="text-xs text-indigo-600 font-bold mt-1">BS: {p.surgeonName}</div>}</div>
-                                                                             <button onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} className="absolute bottom-3 right-3 text-xs bg-gray-100 px-2 py-1 rounded font-bold text-gray-500 hover:bg-orange-100 hover:text-orange-600">Sửa</button>
+                                                                             <button onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} className="absolute bottom-3 right-3 text-sm px-3 py-2 rounded-lg font-bold bg-gray-100 text-gray-500 hover:bg-orange-200 hover:text-orange-600 active:scale-95 transition-all shadow-sm">Sửa</button>
                                                                          </div>
                                                                     ))}
                                                                 </div>
