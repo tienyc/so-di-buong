@@ -626,16 +626,13 @@ const App: React.FC = () => {
                                                         const blockPatients = block.patients.filter(passesGlobalFilters);
                                                         if (blockPatients.length === 0) return null;
                                                         
-                                                        // Đồng nhất style cho Khu Nhà
+                                                        // Option 1: Khu nhà luôn có gradient xanh - chỉ khác icon mở/đóng
                                                         const isBlockExpanded = expandedBlocks[block.id];
-                                                        const blockClass = isBlockExpanded
-                                                            ? 'bg-gradient-to-r from-blue-600 to-blue-400 shadow-lg'
-                                                            : 'bg-white hover:bg-gray-50';
-
-                                                        const iconClass = isBlockExpanded ? 'text-white' : 'text-indigo-600';
-                                                        const textClass = isBlockExpanded ? 'text-white' : 'text-slate-800';
-                                                        const badgeClass = isBlockExpanded ? 'bg-white text-blue-600' : 'bg-gray-100 text-gray-600';
-                                                        const chevronClass = isBlockExpanded ? 'text-white' : 'text-gray-400';
+                                                        const blockClass = 'bg-gradient-to-r from-blue-600 to-blue-400 shadow-lg';
+                                                        const iconClass = 'text-white';
+                                                        const textClass = 'text-white';
+                                                        const badgeClass = 'bg-white text-blue-600';
+                                                        const chevronClass = 'text-white';
 
                                                         return (
                                                             <div key={block.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-soft border border-white/50 mb-4 overflow-hidden">
@@ -644,7 +641,7 @@ const App: React.FC = () => {
                                                                     onClick={() => setExpandedBlocks(prev => ({...prev, [block.id]: !prev[block.id]}))}
                                                                 >
                                                                     <div className="flex items-center gap-3">
-                                                                        <div className={`p-2 rounded-xl ${isBlockExpanded ? 'bg-white/20' : 'bg-indigo-50'}`}>
+                                                                        <div className="p-2 rounded-xl bg-white/20">
                                                                             <Building size={20} className={iconClass} />
                                                                         </div>
                                                                         <span className={`font-bold text-lg ${textClass}`}>{block.name}</span>
