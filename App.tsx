@@ -112,6 +112,9 @@ const App: React.FC = () => {
         return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
     };
 
+    // Ref cho date input
+    const dateInputRef = React.useRef<HTMLInputElement>(null);
+
 
     // --- MAIN DATA LOADING ---
     const loadDataFromSheet = async () => {
@@ -340,19 +343,43 @@ const App: React.FC = () => {
     const severeCount = rooms.flatMap(r => r.patients).filter(p => p.isSevere && p.status !== PatientStatus.ARCHIVED).length;
     const surgeryCount = rooms.flatMap(r => r.patients).filter(p => p.isScheduledForSurgery && (!p.surgeryDate || p.surgeryDate === "") && p.status !== PatientStatus.ARCHIVED).length;
 
+    // Số BN ra viện hôm nay
+    const dischargeTodayCount = useMemo(() => {
+        const today = new Date().toISOString().split('T')[0];
+        return rooms.flatMap(r => r.patients).filter(p =>
+            p.dischargeDate &&
+            normalizeDateString(p.dischargeDate) === today &&
+            p.status !== PatientStatus.ARCHIVED &&
+            !p.dischargeConfirmed
+        ).length;
+    }, [rooms]);
+
     // --- RENDER ---
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
             {/* Header */}
             <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
                 <div className="px-4 py-3 max-w-2xl mx-auto">
-                    {/* Dòng 1: Logo, Tên App, Nút hành động chính */}
+                    {/* Dòng 1: Logo, Tên App, Toggle View, Nút hành động */}
                     <div className="flex justify-between items-center mb-3">
-                        <div className="flex items-center gap-2" onClick={() => setCurrentView(AppView.WARD_ROUND)}>
-                            <div className="bg-medical-500 text-white p-2 rounded-xl shadow-glow cursor-pointer">
-                                <Stethoscope size={20} />
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2" onClick={() => setCurrentView(AppView.WARD_ROUND)}>
+                                <div className="bg-medical-500 text-white p-2 rounded-xl shadow-glow cursor-pointer">
+                                    <Stethoscope size={20} />
+                                </div>
+                                <h1 className="font-bold text-slate-800 text-lg cursor-pointer">Ngoại CT- Bỏng</h1>
                             </div>
-                            <h1 className="font-bold text-slate-800 text-lg cursor-pointer">Ngoại CT- Bỏng</h1>
+
+                            {/* Toggle View: 1 nút 2 icon */}
+                            {currentView === AppView.WARD_ROUND && (
+                                <button
+                                    onClick={() => setDisplayMode(displayMode === 'GRID' ? 'TABLE' : 'GRID')}
+                                    className="bg-gray-100 p-2 rounded-lg hover:bg-gray-200 transition-colors"
+                                    title={displayMode === 'GRID' ? 'Chuyển sang bảng' : 'Chuyển sang thẻ'}
+                                >
+                                    {displayMode === 'GRID' ? <TableIcon size={18} className="text-slate-600"/> : <LayoutGrid size={18} className="text-slate-600"/>}
+                                </button>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
                              <button onClick={loadDataFromSheet} disabled={isLoadingPatients} className="bg-blue-100 text-blue-600 p-2.5 rounded-full hover:bg-blue-200 transition-colors" title="Tải lại dữ liệu">
@@ -383,65 +410,57 @@ const App: React.FC = () => {
                     {currentView !== AppView.SETTINGS && currentView !== AppView.STATISTICS && (
                         <div className="space-y-2.5">
                             
-                            {/* KHU VỰC 1: TOGGLE VIEW & DATE FILTER */}
-                            <div className="flex items-stretch justify-between gap-2 mb-1">
-                                
-                                {/* 1. Toggle Button (GRID/TABLE) - CHỈ HIỆN KHI Ở WARD ROUND */}
-                                {currentView === AppView.WARD_ROUND ? (
-                                    <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg shrink-0 h-10">
-                                        <button 
-                                            onClick={() => setDisplayMode('GRID')}
-                                            className={`p-1.5 rounded-md transition-all h-8 w-8 flex items-center justify-center ${displayMode === 'GRID' ? 'bg-white shadow text-slate-800' : 'text-gray-400'}`}
-                                            title="Xem dạng thẻ"
-                                        >
-                                            <LayoutGrid size={18}/>
-                                        </button>
-                                        <button 
-                                            onClick={() => setDisplayMode('TABLE')}
-                                            className={`p-1.5 rounded-md transition-all h-8 w-8 flex items-center justify-center ${displayMode === 'TABLE' ? 'bg-white shadow text-slate-800' : 'text-gray-400'}`}
-                                            title="Xem dạng bảng"
-                                        >
-                                            <TableIcon size={18}/>
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="h-10 w-[76px] shrink-0" />
-                                )}
-
-                                {/* 2. Date Filter Custom */}
-                                <div className="flex items-center bg-gray-100 rounded-lg p-1 h-10 flex-1 min-w-0">
+                            {/* DATE FILTER - Luôn hiện < >, nút X riêng */}
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center bg-gray-100 rounded-lg p-1 h-10 flex-1">
+                                    {/* Nút giảm ngày */}
                                     <button onClick={() => handleShiftDate(-1)} className="w-8 h-8 flex items-center justify-center rounded-md bg-white shadow-sm text-gray-600 hover:text-blue-600 active:scale-95 shrink-0">
                                         <ChevronLeft size={18} />
                                     </button>
-                                    
-                                    <div className="flex-1 flex items-center justify-center gap-2 px-2 text-sm font-bold text-slate-700 truncate relative">
+
+                                    {/* Khu vực hiển thị ngày - Click để mở calendar */}
+                                    <div
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-2 text-sm font-bold text-slate-700 relative min-h-[32px] cursor-pointer"
+                                        onClick={() => dateInputRef.current?.showPicker?.() || dateInputRef.current?.focus()}
+                                    >
                                         <input
+                                            ref={dateInputRef}
                                             type="date"
                                             value={admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : ''}
                                             onChange={(e) => setAdmissionDateFilterDate(e.target.value ? new Date(e.target.value) : null)}
-                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            className="absolute inset-0 opacity-0 pointer-events-none"
                                             title="Chọn ngày vào viện"
                                         />
                                         {admissionDateFilterDate ? (
                                             <>
                                                 <CalendarDays size={16} className="text-blue-500 shrink-0" />
-                                                <span className="truncate">{formatDateDisplay(admissionDateFilterDate)}</span>
+                                                <span>{formatDateDisplay(admissionDateFilterDate)}</span>
+                                                {/* Nút X nổi */}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleClearDate(); }}
+                                                    className="ml-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-200 active:scale-95 z-20 relative"
+                                                >
+                                                    <X size={12} />
+                                                </button>
                                             </>
                                         ) : (
-                                            <span className="text-gray-400 font-medium">Lọc theo ngày</span>
+                                            <span className="text-gray-400 font-medium text-xs">Chọn ngày</span>
                                         )}
                                     </div>
 
-                                    {admissionDateFilterDate ? (
-                                        <button onClick={handleClearDate} className="w-8 h-8 flex items-center justify-center rounded-md bg-red-100 text-red-500 hover:bg-red-200 active:scale-95 shrink-0">
-                                            <X size={16} />
-                                        </button>
-                                    ) : (
-                                        <button onClick={() => handleShiftDate(1)} className="w-8 h-8 flex items-center justify-center rounded-md bg-white shadow-sm text-gray-600 hover:text-blue-600 active:scale-95 shrink-0">
-                                            <ChevronRight size={18} />
-                                        </button>
-                                    )}
+                                    {/* Nút tăng ngày */}
+                                    <button onClick={() => handleShiftDate(1)} className="w-8 h-8 flex items-center justify-center rounded-md bg-white shadow-sm text-gray-600 hover:text-blue-600 active:scale-95 shrink-0">
+                                        <ChevronRight size={18} />
+                                    </button>
                                 </div>
+
+                                {/* Nút Hôm nay */}
+                                <button
+                                    onClick={() => setAdmissionDateFilterDate(new Date())}
+                                    className="px-3 h-10 bg-blue-500 text-white rounded-lg text-sm font-bold hover:bg-blue-600 active:scale-95 transition-all shrink-0"
+                                >
+                                    Hôm nay
+                                </button>
                             </div>
                             
                             {/* KHU VỰC 2: SEARCH BAR */}
@@ -607,27 +626,29 @@ const App: React.FC = () => {
                                                         const blockPatients = block.patients.filter(passesGlobalFilters);
                                                         if (blockPatients.length === 0) return null;
                                                         
-                                                        // Tùy chỉnh màu sắc và hiệu ứng Gradient cho Khu Nhà
+                                                        // Đồng nhất style cho Khu Nhà
                                                         const isBlockExpanded = expandedBlocks[block.id];
-                                                        const blockClass = isBlockExpanded 
-                                                            ? 'bg-gradient-to-r from-blue-600 to-blue-400 text-white shadow-lg' 
-                                                            : 'bg-white hover:bg-gray-50 text-slate-800';
-                                                        
+                                                        const blockClass = isBlockExpanded
+                                                            ? 'bg-gradient-to-r from-blue-600 to-blue-400 shadow-lg'
+                                                            : 'bg-white hover:bg-gray-50';
+
                                                         const iconClass = isBlockExpanded ? 'text-white' : 'text-indigo-600';
+                                                        const textClass = isBlockExpanded ? 'text-white' : 'text-slate-800';
+                                                        const badgeClass = isBlockExpanded ? 'bg-white text-blue-600' : 'bg-gray-100 text-gray-600';
                                                         const chevronClass = isBlockExpanded ? 'text-white' : 'text-gray-400';
 
                                                         return (
                                                             <div key={block.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-soft border border-white/50 mb-4 overflow-hidden">
-                                                                <div 
+                                                                <div
                                                                     className={`px-5 py-4 flex justify-between items-center cursor-pointer select-none transition-colors ${blockClass}`}
                                                                     onClick={() => setExpandedBlocks(prev => ({...prev, [block.id]: !prev[block.id]}))}
                                                                 >
                                                                     <div className="flex items-center gap-3">
-                                                                        <div className={`p-2 rounded-xl ${isBlockExpanded ? 'bg-white/20' : 'bg-indigo-50'} ${iconClass}`}>
-                                                                            <Building size={20} />
+                                                                        <div className={`p-2 rounded-xl ${isBlockExpanded ? 'bg-white/20' : 'bg-indigo-50'}`}>
+                                                                            <Building size={20} className={iconClass} />
                                                                         </div>
-                                                                        <span className="font-bold text-lg">{block.name}</span>
-                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${isBlockExpanded ? 'bg-white text-blue-600' : 'bg-gray-100 text-gray-600'}`}>{blockPatients.length}</span>
+                                                                        <span className={`font-bold text-lg ${textClass}`}>{block.name}</span>
+                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${badgeClass}`}>{blockPatients.length}</span>
                                                                     </div>
                                                                     {isBlockExpanded ? <ChevronUp size={20} className={chevronClass}/> : <ChevronDown size={20} className={chevronClass}/>}
                                                                 </div>
@@ -651,10 +672,10 @@ const App: React.FC = () => {
                 )}
             </main>
 
-            {/* Bottom Navigation (Giữ nguyên) */}
-            <nav className="fixed bottom-0 inset-x-0 flex justify-center z-40 pb-6">
-                <div className="bg-white/80 backdrop-blur-2xl rounded-full flex justify-around items-center h-[72px] mx-4 px-4 shadow-2xl ring-1 ring-black/5 max-w-2xl w-full">
-                    {[ { id: AppView.WARD_ROUND, icon: LayoutDashboard, label: 'Đi buồng', color: 'medical' }, { id: AppView.SEVERE_CASES, icon: AlertCircle, label: 'Nặng', color: 'red', count: severeCount }, { id: AppView.SURGERY_SCHEDULE, icon: Calendar, label: 'Lịch mổ', color: 'blue', count: surgeryCount }, { id: AppView.DISCHARGE_LIST, icon: LogOut, label: 'Ra viện', color: 'green' } ].map(item => (
+            {/* Bottom Navigation */}
+            <nav className="fixed bottom-0 inset-x-0 flex justify-center z-40 pb-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
+                <div className="bg-white/90 backdrop-blur-2xl rounded-full flex justify-around items-center h-[72px] mx-4 px-4 shadow-2xl ring-1 ring-black/5 max-w-2xl w-full transition-all">
+                    {[ { id: AppView.WARD_ROUND, icon: LayoutDashboard, label: 'Đi buồng', color: 'medical' }, { id: AppView.SEVERE_CASES, icon: AlertCircle, label: 'Nặng', color: 'red', count: severeCount }, { id: AppView.SURGERY_SCHEDULE, icon: Calendar, label: 'Lịch mổ', color: 'blue', count: surgeryCount }, { id: AppView.DISCHARGE_LIST, icon: LogOut, label: 'Ra viện', color: 'green', count: dischargeTodayCount } ].map(item => (
                         <button key={item.id} onClick={() => setCurrentView(item.id)} className={`group flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === item.id ? `text-${item.color}-600` : 'text-slate-500 hover:text-slate-700'}`}>
                             <div className={`p-1 rounded-xl relative ${currentView === item.id ? `bg-${item.color}-50` : ''}`}>
                                 <item.icon size={24} strokeWidth={currentView === item.id ? 2.5 : 2} />
