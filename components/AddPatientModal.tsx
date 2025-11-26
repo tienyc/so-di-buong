@@ -15,7 +15,7 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
     const [isProcessing, setIsProcessing] = useState(false);
     const [aiPreview, setAiPreview] = useState<Patient[] | null>(null);
     const [aiError, setAiError] = useState<string | null>(null);
-    
+
     // AI State
     const [importText, setImportText] = useState('');
 
@@ -28,6 +28,18 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         isSevere: false,
         selectedBlockId: rooms[0]?.id
     });
+
+    // Auto-capitalize helper functions
+    const capitalizeWords = (text: string): string => {
+        return text.toLowerCase().split(' ').map(word =>
+            word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
+    };
+
+    const capitalizeSentence = (text: string): string => {
+        if (!text) return '';
+        return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+    };
 
     const availableRooms = useMemo(() => {
         const block = rooms.find(r => r.id === manualForm.selectedBlockId);
@@ -202,8 +214,8 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                             <div className="flex gap-4">
                                 <div className="flex-[3]">
                                     <label className="block text-xs font-bold text-slate-700 uppercase mb-2 tracking-wide">Họ tên *</label>
-                                    <input required type="text" className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 transition-all font-bold text-lg text-slate-800" 
-                                        value={manualForm.fullName || ''} onChange={e => handleManualChange('fullName', e.target.value)} />
+                                    <input required type="text" className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 transition-all font-bold text-lg text-slate-800"
+                                        value={manualForm.fullName || ''} onChange={e => handleManualChange('fullName', capitalizeWords(e.target.value))} />
                                 </div>
                                 <div className="flex-1">
                                     <label className="block text-xs font-bold text-slate-700 uppercase mb-2 tracking-wide">Tuổi</label>
@@ -284,7 +296,7 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 uppercase mb-2 tracking-wide">Chẩn đoán sơ bộ</label>
                                 <textarea className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 text-slate-700 font-medium" rows={2}
-                                    value={manualForm.diagnosis || ''} onChange={e => handleManualChange('diagnosis', e.target.value)} />
+                                    value={manualForm.diagnosis || ''} onChange={e => handleManualChange('diagnosis', capitalizeSentence(e.target.value))} />
                             </div>
 
                             <button type="submit" className="w-full bg-medical-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-medical-600 mt-2 shadow-xl shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all">

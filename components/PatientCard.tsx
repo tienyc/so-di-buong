@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { Patient, OrderStatus, PatientStatus } from '../types';
-import { Calendar, ClipboardList, MoreHorizontal, LogOut, ArrowRightLeft, Activity, Edit3, Syringe, Clock, Square, AlertTriangle, AlertCircle, Sparkles, ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { Calendar, ClipboardList, MoreHorizontal, LogOut, ArrowRightLeft, Activity, Edit3, Syringe, Clock, Square, AlertTriangle, AlertCircle, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 
 interface PatientCardProps {
     patient: Patient;
@@ -203,11 +203,6 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                              <AlertTriangle size={24} className="fill-red-50"/>
                          </div>
                     )}
-                    {isNew && !isSevere && (
-                        <div className="text-emerald-500 drop-shadow-sm" title="Bệnh mới">
-                            <Sparkles size={24} className="fill-emerald-50"/>
-                        </div>
-                    )}
                     {hasPendingOrders && !isDischarged && (
                         <div className="relative">
                              <div className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
@@ -220,14 +215,11 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                     <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2.5">
                             <h3 className="font-bold text-slate-800 truncate text-lg tracking-tight">
-                                {patient.fullName} 
+                                {patient.fullName}
                             </h3>
                             <span className="text-xs font-bold text-slate-500 bg-white/60 px-2 py-0.5 rounded-md border border-slate-200/50">
                                 {patient.age}t
                             </span>
-                            {isNew && !isSevere && (
-                                <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full shadow-sm">MỚI</span>
-                            )}
                         </div>
                         <div className="flex flex-col items-end shrink-0 ml-2">
                             {rightSideBadge}
@@ -465,15 +457,15 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                         </div>
                     )}
 
-                    {showDischargeConfirm && isDischarged ? (
-                         <button 
+                    {showDischargeConfirm ? (
+                         <button
                             onClick={() => onConfirmDischarge && onConfirmDischarge(patient.id)}
-                            className="w-full bg-slate-800 text-white py-4 rounded-2xl text-sm font-bold hover:bg-slate-900 shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
+                            className="w-full bg-green-600 text-white py-4 rounded-2xl text-sm font-bold hover:bg-green-700 shadow-lg flex items-center justify-center gap-2 mt-6 active:scale-95 transition-all"
                         >
                             <LogOut size={20} /> Xác nhận Đã Ra Viện
                         </button>
                     ) : !isDischarged && (
-                        <button 
+                        <button
                             onClick={(e) => { e.stopPropagation(); onAddOrder(patient.id); }}
                             className="w-full bg-medical-500 text-white py-4 rounded-2xl text-sm font-bold hover:bg-medical-600 shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all mt-6"
                         >

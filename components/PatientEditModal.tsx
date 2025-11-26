@@ -49,11 +49,23 @@ interface PatientEditModalProps {
     surgeryRequirements?: string[];
 }
 
-const PatientEditModal: React.FC<PatientEditModalProps> = ({ 
+const PatientEditModal: React.FC<PatientEditModalProps> = ({
     isOpen, onClose, onSave, patient,
     doctors = [], operatingRooms = [], anesthesiaMethods = [], surgeryClassifications = [], surgeryRequirements = []
 }) => {
     const [formData, setFormData] = useState<Partial<Patient>>({});
+
+    // Auto-capitalize helper functions
+    const capitalizeWords = (text: string): string => {
+        return text.toLowerCase().split(' ').map(word =>
+            word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
+    };
+
+    const capitalizeSentence = (text: string): string => {
+        if (!text) return '';
+        return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+    };
 
     // Reset form khi mở modal hoặc đổi bệnh nhân
     useEffect(() => {
@@ -138,11 +150,11 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                     <div className="grid grid-cols-1 gap-3">
                          <div>
                             <label className={labelClass}>Họ và tên</label>
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 required
                                 value={formData.fullName || ''}
-                                onChange={(e) => handleChange('fullName', e.target.value)}
+                                onChange={(e) => handleChange('fullName', capitalizeWords(e.target.value))}
                                 className={`${inputClass} font-bold`}
                             />
                         </div>
@@ -171,11 +183,11 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
 
                     <div>
                         <label className={labelClass}>Chẩn đoán</label>
-                        <textarea 
+                        <textarea
                             rows={2}
                             required
                             value={formData.diagnosis || ''}
-                            onChange={(e) => handleChange('diagnosis', e.target.value)}
+                            onChange={(e) => handleChange('diagnosis', capitalizeSentence(e.target.value))}
                             className={inputClass}
                         />
                     </div>
@@ -232,11 +244,11 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
 
                         <div>
                             <label className={labelClass}>Phương pháp (Tên mổ)</label>
-                            <input 
+                            <input
                                 type="text"
-                                placeholder="VD: Nội soi cắt ruột thừa..." 
+                                placeholder="VD: Nội soi cắt ruột thừa..."
                                 value={formData.surgeryMethod || ''}
-                                onChange={(e) => handleChange('surgeryMethod', e.target.value)}
+                                onChange={(e) => handleChange('surgeryMethod', capitalizeSentence(e.target.value))}
                                 className={inputClass}
                             />
                         </div>
