@@ -3,460 +3,221 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Demo Giao Diện Tối Ưu Y Tế</title>
+    <title>Giao Diện Y Tế Cao Cấp</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
     <style>
-        /* --- CSS Reset & Base Styles --- */
         :root {
-            --primary: #2563eb; /* Blue 600 */
-            --primary-light: #eff6ff; /* Blue 50 */
-            --text-main: #1e293b; /* Slate 800 */
-            --text-sub: #64748b; /* Slate 500 */
-            --bg-app: #f1f5f9; /* Slate 100 */
-            --white: #ffffff;
-            --danger: #ef4444;
-            --success: #22c55e;
-            --warning: #f59e0b;
+            /* Palette màu tinh tế hơn (Slate & Indigo) */
+            --primary: #3b82f6;
+            --bg-app: #f1f5f9;
+            --card-bg: #ffffff;
+            --text-dark: #0f172a;
+            --text-gray: #64748b;
+            --shadow-subtle: 0 4px 20px rgba(148, 163, 184, 0.15);
+            --border-light: #e2e8f0;
+            
+            /* Màu trạng thái Pastel (Dịu mắt nhưng rõ ràng) */
+            --tag-red-bg: #fef2f2; --tag-red-text: #ef4444;
+            --tag-blue-bg: #eff6ff; --tag-blue-text: #3b82f6;
+            --tag-orange-bg: #fff7ed; --tag-orange-text: #f97316;
+            --tag-gray-bg: #f8fafc; --tag-gray-text: #64748b;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        
-        body { background-color: #e2e8f0; display: flex; justify-content: center; min-height: 100vh; }
-
-        /* Giả lập khung điện thoại để xem demo */
-        .mobile-frame {
-            width: 100%;
-            max-width: 420px;
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif; /* Font hiện đại hơn Inter */
             background-color: var(--bg-app);
-            min-height: 100vh;
-            position: relative;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            padding-bottom: 80px; /* Chừa chỗ cho Bottom Nav */
+            color: var(--text-dark);
+            margin: 0;
+            padding: 16px;
+            padding-bottom: 80px;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* --- HEADER AREA --- */
-        .header {
-            background: var(--white);
-            position: sticky;
-            top: 0;
-            z-index: 50;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
+        .container { max-width: 500px; margin: 0 auto; }
 
-        .top-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid #f1f5f9;
-        }
-
-        .app-title {
-            font-size: 18px;
-            font-weight: 800;
-            color: var(--primary);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .icon-btn {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border: none;
-            background: #f8fafc;
-            color: var(--text-sub);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 20px;
-        }
-        
-        .icon-btn.primary { background: var(--primary); color: white; box-shadow: 0 2px 5px rgba(37, 99, 235, 0.3); }
-
-        /* --- FILTERS AREA --- */
-        .filter-section {
-            padding: 10px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            background: var(--white);
-        }
-
-        .date-search-row {
-            display: flex;
-            gap: 8px;
-        }
-
-        /* Date Picker Custom < dd/mm > X */
-        .date-picker-compact {
-            display: flex;
-            align-items: center;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 4px;
-            flex-shrink: 0;
-        }
-        .date-nav-btn {
-            width: 28px;
-            height: 28px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: none;
-            background: white;
-            border-radius: 6px;
-            color: var(--text-sub);
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-        .date-display {
-            font-size: 13px;
-            font-weight: 700;
-            color: var(--text-main);
-            padding: 0 8px;
-            min-width: 60px;
-            text-align: center;
-        }
-        .date-clear-btn {
-            color: var(--danger);
-            background: none;
-            border: none;
-            font-size: 16px;
-            padding: 0 4px;
-            cursor: pointer;
-        }
-        
-        .today-btn {
-            background: var(--primary-light);
-            color: var(--primary);
-            border: 1px solid transparent;
-            font-size: 12px;
-            font-weight: 600;
-            padding: 0 10px;
-            border-radius: 8px;
-            white-space: nowrap;
-        }
-
-        /* Search Bar Tối Ưu */
-        .search-bar {
-            flex-grow: 1;
-            position: relative;
-        }
-        .search-bar input {
-            width: 100%;
-            height: 38px;
-            padding: 0 12px 0 34px;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            font-size: 13px;
-            outline: none;
-        }
-        .search-icon {
-            position: absolute;
-            left: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #94a3b8;
-            font-size: 16px;
-        }
-
-        /* --- CONTENT AREA: DENSE LIST VIEW --- */
-        .content { padding: 16px; }
-
-        .room-block {
-            background: var(--white);
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            margin-bottom: 16px;
-            overflow: hidden;
-        }
-
-        /* Tiêu đề Khu - Đồng bộ & Gọn */
-        .block-header {
-            background: linear-gradient(to right, #2563eb, #3b82f6);
+        /* --- HEADER KHU VỰC (Gradient Tinh tế) --- */
+        .room-header {
+            background: linear-gradient(135deg, #2563eb, #4f46e5); /* Gradient Indigo-Blue */
             color: white;
-            padding: 10px 16px;
-            font-size: 14px;
-            font-weight: 700;
+            padding: 14px 20px;
+            border-radius: 20px;
+            margin-bottom: 12px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-        .count-badge {
-            background: rgba(255,255,255,0.2);
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-        }
-
-        /* Danh sách bệnh nhân dạng List (Tối ưu chiều cao) */
-        .patient-row {
-            display: flex;
-            align-items: stretch; /* Để thanh màu status kéo dài hết chiều cao */
-            padding: 10px 16px;
-            border-bottom: 1px solid #f1f5f9;
+            box-shadow: 0 8px 15px rgba(37, 99, 235, 0.2); /* Shadow màu xanh tạo độ sâu */
             position: relative;
-            background: white;
+            z-index: 10;
         }
-        .patient-row:last-child { border-bottom: none; }
-
-        /* Thanh trạng thái màu bên trái (Thay thế viền to) */
-        .status-strip {
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 4px;
-        }
-        .status-strip.red { background: var(--danger); }
-        .status-strip.blue { background: var(--primary); }
-        .status-strip.green { background: var(--success); }
-
-        .p-info { flex-grow: 1; min-width: 0; /* Cho phép truncate text */ padding-left: 8px; }
         
-        /* Dòng 1: Tên + Tuổi + Phòng */
-        .p-row-1 { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-        .p-name { font-size: 14px; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
-        .p-age { font-size: 12px; color: var(--text-sub); }
-        .p-room-tag { 
-            background: #fff7ed; color: #ea580c; border: 1px solid #ffedd5;
-            font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px;
+        .room-title { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.02em; }
+        .room-count { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+
+        /* --- DANH SÁCH BỆNH NHÂN (FLOATING STYLE) --- */
+        .patient-card {
+            background: var(--card-bg);
+            border-radius: 16px; /* Bo góc lớn kiểu iOS */
+            padding: 12px 16px;
+            margin-bottom: 8px; /* Tách rời nhau */
+            box-shadow: var(--shadow-subtle);
+            border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+            height: 68px; /* Chiều cao cố định tối ưu */
         }
 
-        /* Dòng 2: Chẩn đoán (Cắt bớt nếu dài) */
-        .p-diagnosis {
-            font-size: 12px; color: var(--text-sub);
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        .patient-card:active { transform: scale(0.98); }
+
+        /* Thanh trạng thái bên trái (Mỏng và tinh tế) */
+        .status-indicator {
+            width: 4px;
+            height: 24px;
+            border-radius: 4px;
+            background-color: var(--border-light);
+        }
+        .status-indicator.red { background-color: var(--tag-red-text); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); } /* Glowing effect */
+        .status-indicator.blue { background-color: var(--tag-blue-text); }
+
+        /* Thông tin chính */
+        .main-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        
+        .row-top { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+        .name { font-weight: 700; font-size: 1rem; color: var(--text-dark); letter-spacing: -0.01em; }
+        .age { font-size: 0.85rem; color: var(--text-gray); font-weight: 500; }
+        
+        .diagnosis { 
+            font-size: 0.85rem; color: var(--text-gray); 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+            max-width: 200px;
         }
 
-        /* Cột bên phải: Ngày & Action */
-        .p-meta {
+        /* Thông tin phụ (Tags & Actions) */
+        .meta-info {
             display: flex;
             flex-direction: column;
             align-items: flex-end;
-            justify-content: center;
-            gap: 4px;
-            min-width: 80px;
+            gap: 6px;
         }
 
-        /* Pill Ngày PT nhỏ gọn */
-        .date-pill {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 10px;
+        /* Capsule Tag (Viên thuốc) */
+        .capsule {
+            font-size: 0.7rem;
             font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-        .date-pill.pt { background: #fee2e2; color: #dc2626; } /* PT đỏ nhạt */
-        .date-pill.rv { background: #dcfce7; color: #166534; } /* RV xanh nhạt */
-
-        .action-dot { color: #cbd5e1; font-size: 18px; line-height: 0; }
-
-        /* --- BOTTOM NAV --- */
-        .bottom-nav {
-            position: absolute;
-            bottom: 0; left: 0; right: 0;
-            height: 60px;
-            background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid #e2e8f0;
+            padding: 4px 10px;
+            border-radius: 20px;
             display: flex;
-            justify-content: space-around;
             align-items: center;
+            gap: 4px;
+            letter-spacing: 0.02em;
         }
-        .nav-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 2px;
-            color: var(--text-sub);
-            font-size: 10px;
-            font-weight: 600;
-            background: none; border: none;
-            position: relative;
+        .capsule.pt { background-color: var(--tag-orange-bg); color: var(--tag-orange-text); }
+        .capsule.rv { background-color: var(--tag-blue-bg); color: var(--tag-blue-text); }
+        
+        .more-btn { color: #94a3b8; padding: 4px; border-radius: 50%; cursor: pointer; }
+
+        /* Action Badge (Số lượng y lệnh) */
+        .action-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #64748b;
+            background: #f1f5f9;
+            padding: 2px 8px;
+            border-radius: 6px;
+            display: flex; align-items: center; gap: 4px;
         }
-        .nav-item.active { color: var(--primary); }
-        .nav-icon { font-size: 20px; }
-        .nav-badge {
-            position: absolute;
-            top: -2px; right: 2px;
-            background: var(--danger);
-            color: white;
-            font-size: 9px;
-            padding: 0 4px;
-            border-radius: 10px;
-            border: 1px solid white;
-        }
-        .nav-badge.green { background: var(--success); }
 
     </style>
 </head>
 <body>
 
-<div class="mobile-frame">
-    <header class="header">
-        <div class="top-bar">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <button class="icon-btn" title="Chuyển View">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M12 9v12"/></svg>
-                </button>
-                <div class="app-title">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/></svg>
-                    Ngoại CT-Bỏng
-                </div>
-            </div>
-            
-            <div style="display: flex; gap: 8px;">
-                <button class="icon-btn primary"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
-                <button class="icon-btn"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-            </div>
+    <div class="container">
+        <div class="room-header">
+            <span class="room-title">Khu B1 - B4</span>
+            <span class="room-count">3 bệnh nhân</span>
         </div>
 
-        <div class="filter-section">
-            <div class="date-search-row">
-                <div class="date-picker-compact">
-                    <button class="date-nav-btn">‹</button>
-                    <div class="date-display">27/11</div>
-                    <button class="date-nav-btn">›</button>
-                    <button class="date-clear-btn">×</button>
-                </div>
-                
-                <button class="today-btn">Hôm nay</button>
-
-                <div class="search-bar">
-                    <span class="search-icon">🔍</span>
-                    <input type="text" placeholder="Tìm tên...">
-                </div>
-            </div>
+        <div class="patient-card">
+            <div class="status-indicator red"></div>
             
-            <div style="display: flex; gap: 8px;">
-                 <select style="flex:1; padding: 6px; font-size: 12px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc;"><option>Tất cả khu</option></select>
-                 <select style="flex:0.5; padding: 6px; font-size: 12px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc;"><option>Tất cả</option></select>
-            </div>
-        </div>
-    </header>
-
-    <div class="content">
-
-        <div class="room-block">
-            <div class="block-header">
-                <span>🏢 B1-B4</span>
-                <span class="count-badge">3</span>
-            </div>
-            
-            <div class="patient-row">
-                <div class="status-strip red"></div> <div class="p-info">
-                    <div class="p-row-1">
-                        <span class="p-name">Trần Hùng</span>
-                        <span class="p-age">(50t)</span>
-                        <span class="p-room-tag">TP-4</span>
-                    </div>
-                    <div class="p-diagnosis">Gãy kín 1/3 giữa xương đùi (T)</div>
+            <div class="main-info">
+                <div class="row-top">
+                    <span class="name">Trần Văn Hùng</span>
+                    <span class="age">50t</span>
                 </div>
-                <div class="p-meta">
-                    <div class="date-pill pt">🔪 27/11</div>
-                    <div class="action-dot">•••</div>
-                </div>
+                <div class="diagnosis">Gãy kín 1/3 giữa xương đùi (P)</div>
             </div>
 
-            <div class="patient-row">
-                <div class="status-strip blue"></div> <div class="p-info">
-                    <div class="p-row-1">
-                        <span class="p-name">Phạm Thị Lan</span>
-                        <span class="p-age">(34t)</span>
-                        <span class="p-room-tag">TP-1</span>
-                    </div>
-                    <div class="p-diagnosis">U bã đậu vùng vai phải</div>
-                </div>
-                <div class="p-meta">
-                    <div class="date-pill pt" style="background:#f1f5f9; color:#64748b">⏳ Chờ</div>
-                    <div class="action-dot">•••</div>
-                </div>
-            </div>
-
-            <div class="patient-row">
-                <div class="status-strip blue"></div>
-                <div class="p-info">
-                    <div class="p-row-1">
-                        <span class="p-name">Nguyễn Văn An</span>
-                        <span class="p-age">(50t)</span>
-                        <span class="p-room-tag">TP-4</span>
-                    </div>
-                    <div class="p-diagnosis">Gãy xương cẳng tay trái</div>
-                </div>
-                <div class="p-meta">
-                    <div class="date-pill rv">🚪 26/11</div>
-                    <div class="action-dot">•••</div>
+            <div class="meta-info">
+                <div class="capsule pt">
+                    <i data-lucide="scalpel" style="width:12px"></i> PT: 27/11
                 </div>
             </div>
         </div>
 
-        <div class="room-block">
-            <div class="block-header">
-                <span>🚑 Cấp Cứu 1</span>
-                <span class="count-badge">2</span>
-            </div>
-            <div class="patient-row">
-                <div class="status-strip red"></div>
-                <div class="p-info">
-                    <div class="p-row-1">
-                        <span class="p-name">Lê Văn Tèo</span>
-                        <span class="p-age">(22t)</span>
-                        <span class="p-room-tag">CC-1</span>
-                    </div>
-                    <div class="p-diagnosis">Đa chấn thương do TNGT</div>
+        <div class="patient-card">
+            <div class="status-indicator blue"></div>
+            
+            <div class="main-info">
+                <div class="row-top">
+                    <span class="name">Nguyễn Thị Lan</span>
+                    <span class="age">34t</span>
                 </div>
-                <div class="p-meta">
-                    <div class="date-pill pt">🔪 27/11</div>
-                    <div class="action-dot">•••</div>
+                <div class="diagnosis">U bã đậu vùng vai phải</div>
+            </div>
+
+            <div class="meta-info">
+                <div class="capsule rv">
+                    <i data-lucide="log-out" style="width:12px"></i> Rv: 26/11
                 </div>
             </div>
-             <div class="patient-row">
-                <div class="status-strip red"></div>
-                <div class="p-info">
-                    <div class="p-row-1">
-                        <span class="p-name">Lê Văn Tí</span>
-                        <span class="p-age">(22t)</span>
-                        <span class="p-room-tag">CC-1</span>
-                    </div>
-                    <div class="p-diagnosis">Đa chấn thương do TNGT</div>
+        </div>
+
+        <div class="patient-card">
+            <div class="status-indicator" style="background-color: transparent"></div>
+            
+            <div class="main-info">
+                <div class="row-top">
+                    <span class="name">Lê Văn An</span>
+                    <span class="age">28t</span>
                 </div>
-                <div class="p-meta">
-                    <div class="date-pill pt">🔪 27/11</div>
-                    <div class="action-dot">•••</div>
+                <div class="diagnosis">Vết thương phần mềm cẳng tay</div>
+            </div>
+
+            <div class="meta-info">
+                 <div class="action-badge">
+                    <i data-lucide="clipboard-list" style="width:12px"></i> 3 y lệnh
+                 </div>
+            </div>
+        </div>
+
+        <div class="room-header" style="background: linear-gradient(135deg, #ef4444, #f43f5e); margin-top: 24px;">
+            <span class="room-title">Cấp Cứu 1</span>
+            <span class="room-count">2 bệnh nhân</span>
+        </div>
+
+        <div class="patient-card">
+            <div class="status-indicator red"></div>
+            <div class="main-info">
+                <div class="row-top">
+                    <span class="name">Phạm Văn Đồng</span>
+                    <span class="age">65t</span>
                 </div>
+                <div class="diagnosis">Chấn thương sọ não kín / TDH</div>
+            </div>
+            <div class="meta-info">
+                <i data-lucide="more-horizontal" class="more-btn"></i>
             </div>
         </div>
 
     </div>
 
-    <nav class="bottom-nav">
-        <button class="nav-item active">
-            <span class="nav-icon">🩺</span>
-            Đi buồng
-        </button>
-        <button class="nav-item">
-            <span class="nav-icon">🚨</span>
-            Nặng
-            <span class="nav-badge">2</span>
-        </button>
-        <button class="nav-item">
-            <span class="nav-icon">🗓️</span>
-            Lịch mổ
-            <span class="nav-badge" style="background:#3b82f6">1</span>
-        </button>
-        <button class="nav-item">
-            <span class="nav-icon">🚪</span>
-            Ra viện
-            <span class="nav-badge green">3</span>
-        </button>
-    </nav>
-</div>
-
+    <script>
+        lucide.createIcons();
+    </script>
 </body>
 </html>

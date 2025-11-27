@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import { Patient, OrderStatus, PatientStatus } from '../types';
+import { Patient, OrderStatus, PatientStatus, OrderType } from '../types';
 import { Calendar, ClipboardList, MoreHorizontal, LogOut, ArrowRightLeft, Activity, Edit3, Syringe, Clock, Square, AlertTriangle, AlertCircle, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 
 interface PatientCardProps {
@@ -98,7 +98,8 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
     
     // Logic Lọc Y lệnh an toàn
     const ordersSafe = Array.isArray(patient.orders) ? patient.orders : [];
-    const pendingOrders = ordersSafe.filter(o => o.status === OrderStatus.PENDING);
+    // Filter out DISCHARGE orders - they're already shown on the card
+    const pendingOrders = ordersSafe.filter(o => o.status === OrderStatus.PENDING && o.type !== OrderType.DISCHARGE);
     
     const todayOrders = pendingOrders.filter(o => {
         const d = normalizeDateString(safeString(o.executionDate));
@@ -113,6 +114,16 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         const dateA = normalizeDateString(safeString(a.executionDate));
         const dateB = normalizeDateString(safeString(b.executionDate));
         return dateA.localeCompare(dateB);
+    });
+
+    const overdueOrders = pendingOrders.filter(o => {
+        const d = normalizeDateString(safeString(o.executionDate));
+        return d < todayStr; // Dates BEFORE today (overdue)
+    }).sort((a, b) => {
+        // Sort by execution date descending (most recent first)
+        const dateA = normalizeDateString(safeString(a.executionDate));
+        const dateB = normalizeDateString(safeString(b.executionDate));
+        return dateB.localeCompare(dateA);
     });
 
     const hasPendingOrders = pendingOrders.length > 0;
@@ -164,14 +175,14 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         const days = Math.abs(getDiffDays(surgeryDateStr));
         postOpDays = days;
         rightSideBadge = (
-            <div className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border shadow-sm ${days <= 1 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+            <div className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap border shadow-sm ${days <= 1 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                 HP-{days}
             </div>
         );
     } else {
         const days = Math.abs(getDiffDays(admissionDateStr)) + 1;
         rightSideBadge = (
-            <div className="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border border-amber-100 shadow-sm">
+            <div className="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap border border-amber-100 shadow-sm">
                 TP-{days}
             </div>
         );
@@ -201,37 +212,37 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
     const isNew = isNewPatient();
 
     const getCardStyle = () => {
-        if (patient.status === PatientStatus.DISCHARGED) return 'bg-slate-50 border-l-4 border-l-slate-300 opacity-60 shadow-soft';
-        if (isSevere) return 'bg-white border-l-4 border-l-red-500 shadow-soft';
-        if (isNew) return 'bg-white border-l-4 border-l-emerald-500 shadow-soft';
-        return 'bg-white border-l-4 border-l-blue-400 shadow-soft';
+        if (patient.status === PatientStatus.DISCHARGED) return 'bg-slate-50 border-l-[3px] border-l-slate-400 opacity-60 shadow-sm';
+        if (isSevere) return 'bg-white border-l-[3px] border-l-red-500 [box-shadow:0_0_8px_rgba(239,68,68,0.4),0_1px_3px_0_rgba(0,0,0,0.1)]';
+        if (isNew) return 'bg-white border-l-[3px] border-l-emerald-500 shadow-sm';
+        return 'bg-white border-l-[3px] border-l-blue-500 shadow-sm';
     };
 
     return (
-        <div className={`relative rounded-3xl mb-4 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${getCardStyle()}`}>
+        <div className={`relative rounded-2xl mb-3 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${getCardStyle()}`}>
             
-            <div className="p-5 flex items-start gap-4 cursor-pointer" onClick={() => !showMenu && setExpanded(!expanded)}>
-                <div className="flex flex-col items-center gap-3 pt-1 w-6 shrink-0">
+            <div className="p-3 flex items-start gap-3 cursor-pointer" onClick={() => !showMenu && setExpanded(!expanded)}>
+                <div className="flex flex-col items-center gap-2 pt-0.5 w-5 shrink-0">
                     {isSevere && (
                          <div className="text-red-500 animate-pulse drop-shadow-sm" title="Bệnh nặng">
-                             <AlertTriangle size={24} className="fill-red-50"/>
+                             <AlertTriangle size={20} className="fill-red-50"/>
                          </div>
                     )}
                     {hasPendingOrders && !isDischarged && (
                         <div className="relative">
-                             <div className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
-                             <ClipboardList size={22} className="text-slate-400"/>
+                             <div className="absolute -right-0.5 -top-0.5 w-2 h-2 bg-green-500 rounded-full border-2 border-white"></div>
+                             <ClipboardList size={18} className="text-slate-400"/>
                         </div>
                     )}
                 </div>
 
                 <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2.5">
-                            <h3 className="font-bold text-slate-800 truncate text-lg tracking-tight">
+                    <div className="flex justify-between items-start mb-1.5">
+                        <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-slate-800 truncate text-base tracking-tight">
                                 {patient.fullName}
                             </h3>
-                            <span className="text-xs font-bold text-slate-500 bg-white/60 px-2 py-0.5 rounded-md border border-slate-200/50">
+                            <span className="text-[11px] font-bold text-slate-500 bg-white/60 px-1.5 py-0.5 rounded-md border border-slate-200/50">
                                 {patient.age}t
                             </span>
                         </div>
@@ -239,29 +250,29 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                             {rightSideBadge}
                         </div>
                     </div>
-                    
-                    <p className="text-base font-medium text-slate-600 line-clamp-1 mb-2 leading-relaxed">{patient.diagnosis}</p>
-                    
-                    <div className="flex flex-wrap gap-2">
+
+                    <p className="text-sm font-medium text-slate-600 line-clamp-1 mb-1.5 leading-relaxed">{patient.diagnosis}</p>
+
+                    <div className="flex flex-wrap gap-1.5">
                         {patient.isScheduledForSurgery && (!surgeryDateStr || surgeryDateStr >= todayStr) && (
-                            <div className="flex items-center gap-1.5 text-xs text-orange-700 bg-orange-50 px-2.5 py-1 rounded-full border border-orange-100 shadow-sm font-bold">
+                            <div className="flex items-center gap-1 text-[10px] text-[#f97316] bg-[#fff7ed] px-2 py-0.5 rounded-full border border-[#fed7aa] font-bold">
                                 {urgentInfo.hasSurgeryToday && (
-                                    <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#f97316] animate-pulse"></div>
                                 )}
-                                <Calendar size={12} />
+                                <Calendar size={10} />
                                 <span>PT: {surgeryDateStr ? formatDateShort(surgeryDateStr) : 'Chờ lịch'}</span>
                             </div>
                         )}
-                        
+
                         {patient.dischargeDate && patient.dischargeConfirmed !== true && (
-                            <div className="flex items-center gap-1.5 text-xs text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-100 shadow-sm font-bold">
+                            <div className="flex items-center gap-1 text-[10px] text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200 font-bold">
                                 {urgentInfo.hasDischargeToday && (
-                                    <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse"></div>
                                 )}
                                 {urgentInfo.isDischargeOverdue && (
-                                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-[#ef4444] animate-pulse"></div>
                                 )}
-                                <LogOut size={12} />
+                                <LogOut size={10} />
                                 <span>Rv: {formatDateShort(patient.dischargeDate)}</span>
                             </div>
                         )}
@@ -343,7 +354,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
             )}
 
             {expanded && (
-                <div className="border-t border-gray-100 p-5 animate-in slide-in-from-top-2 duration-300 rounded-b-3xl text-sm text-slate-800 relative z-0 bg-gray-50/50">
+                <div className="border-t border-gray-100 p-4 animate-in slide-in-from-top-2 duration-300 rounded-b-2xl text-sm text-slate-800 relative z-0 bg-gray-50/50">
                     <div 
                         className="flex items-center gap-2 mb-4 cursor-pointer select-none text-slate-500 hover:text-medical-600 transition-colors group"
                         onClick={() => setShowDetails(!showDetails)}
@@ -407,6 +418,35 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
 
                     {!isDischarged && (
                         <div className="space-y-4 mb-2">
+                            {/* Overdue Orders - Shown FIRST with red warning */}
+                            {overdueOrders.length > 0 && (
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]"></div>
+                                        <span className="text-xs font-bold text-red-600 uppercase tracking-wide">Quá hạn ({overdueOrders.length})</span>
+                                    </div>
+                                    <div className="space-y-2 pl-2 border-l-2 border-red-300 ml-1.5">
+                                        {overdueOrders.map(order => (
+                                            <div key={order.id} className="bg-red-50 p-3 rounded-xl border border-red-200 text-sm shadow-sm flex items-start gap-2.5 group hover:border-red-300 transition-colors">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onCompleteOrder && onCompleteOrder(patient.id, order.id); }}
+                                                    className="mt-0.5 text-gray-300 hover:text-green-500 transition-colors shrink-0 p-1 hover:bg-green-50 rounded"
+                                                >
+                                                    <Square size={22} />
+                                                </button>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                        <Clock size={12} className="text-red-500"/>
+                                                        <span className="font-bold text-red-600 text-xs bg-red-100 px-1.5 py-0.5 rounded">{formatDateVN(order.executionDate)}</span>
+                                                    </div>
+                                                    <p className="text-slate-800 font-medium text-sm">{order.content}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
                                     <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
@@ -415,9 +455,9 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                 {todayOrders.length === 0 ? (
                                     <div className="text-xs text-slate-400 italic pl-6 py-2 bg-white rounded-xl border border-dashed border-gray-200">Chưa có y lệnh hôm nay.</div>
                                 ) : (
-                                    <div className="space-y-3 pl-2 border-l-2 border-slate-200 ml-1.5">
+                                    <div className="space-y-2 pl-2 border-l-2 border-slate-200 ml-1.5">
                                         {(showAllOrders ? todayOrders : todayOrders.slice(0, 4)).map(order => (
-                                            <div key={order.id} className="bg-white p-3.5 rounded-xl border border-gray-100 text-sm shadow-sm flex items-start gap-3 group hover:border-green-200 transition-colors">
+                                            <div key={order.id} className="bg-white p-3 rounded-xl border border-gray-100 text-sm shadow-sm flex items-start gap-2.5 group hover:border-green-200 transition-colors">
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); onCompleteOrder && onCompleteOrder(patient.id, order.id); }}
                                                     className="mt-0.5 text-gray-300 hover:text-green-500 transition-colors shrink-0 p-1 hover:bg-green-50 rounded"
@@ -425,7 +465,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                                     <Square size={22} />
                                                 </button>
                                                 <div className="flex-1 pt-0.5">
-                                                    <p className="text-slate-800 font-medium text-base leading-snug">{order.content}</p>
+                                                    <p className="text-slate-800 font-medium text-sm leading-snug">{order.content}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -461,7 +501,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                                         <Clock size={12} className="text-blue-500"/>
                                                         <span className="font-bold text-blue-600 text-xs bg-blue-50 px-1.5 py-0.5 rounded">{formatDateVN(order.executionDate)}</span>
                                                     </div>
-                                                    <p className="text-slate-600">{order.content}</p>
+                                                    <p className="text-slate-600 text-sm">{order.content}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -474,9 +514,9 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                     {!isDischarged && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onAddOrder(patient.id); }}
-                            className="w-full bg-medical-500 text-white py-4 rounded-2xl text-sm font-bold hover:bg-medical-600 shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all mt-6"
+                            className="w-full bg-medical-500 text-white py-2.5 rounded-2xl text-xs font-bold hover:bg-medical-600 shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all mt-4"
                         >
-                            <Plus size={22} /> Thêm Y Lệnh Mới
+                            <Plus size={18} /> Thêm Y Lệnh Mới
                         </button>
                     )}
                 </div>

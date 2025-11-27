@@ -121,14 +121,34 @@ const TransferModal: React.FC<TransferModalProps> = ({
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                            <label className="block text-xs font-bold text-gray-400 uppercase mb-3 tracking-wide">Ngày ra viện (Dự kiến/Chính thức)</label>
-                            <input 
-                                type="date" 
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <label className="block text-xs font-bold text-gray-400 uppercase mb-2 tracking-wide">Ngày ra viện (Dự kiến/Chính thức)</label>
+                            <input
+                                type="date"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
-                                className="w-full bg-white border border-gray-200 rounded-xl p-3 focus:ring-2 focus:ring-gray-500 outline-none font-bold text-slate-800 text-center shadow-sm"
+                                className="w-full bg-white border border-gray-200 rounded-lg p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold text-slate-800 text-center shadow-sm text-base mb-2"
                             />
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setDate(new Date().toISOString().split('T')[0])}
+                                    className="flex-1 py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-medical-50 hover:border-medical-300 hover:text-medical-700 active:scale-95 transition-all"
+                                >
+                                    Hôm nay
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const tomorrow = new Date();
+                                        tomorrow.setDate(tomorrow.getDate() + 1);
+                                        setDate(tomorrow.toISOString().split('T')[0]);
+                                    }}
+                                    className="flex-1 py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 active:scale-95 transition-all"
+                                >
+                                    Ngày mai
+                                </button>
+                            </div>
                         </div>
                     )}
 

@@ -228,10 +228,13 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 uppercase mb-2 tracking-wide">Chọn Khu/Nhà *</label>
-                                    <select 
+                                    <select
                                         className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 font-bold text-slate-700"
                                         value={manualForm.selectedBlockId}
-                                        onChange={e => handleManualChange('selectedBlockId', e.target.value)}
+                                        onChange={e => {
+                                            handleManualChange('selectedBlockId', e.target.value);
+                                            handleManualChange('roomNumber', ''); // Reset room when changing ward
+                                        }}
                                     >
                                         {rooms.map(r => (
                                             <option key={r.id} value={r.id}>{r.name}</option>
@@ -267,28 +270,28 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                 </div>
                             </div>
 
-                            {/* Admission Date - High Prominence as requested */}
-                            <div className="bg-medical-50 p-5 rounded-2xl border-2 border-medical-100 shadow-sm relative overflow-hidden">
+                            {/* Admission Date - Compact version */}
+                            <div className="bg-medical-50 p-3 rounded-xl border border-medical-100 shadow-sm relative overflow-hidden">
                                 <div className="absolute top-0 right-0 p-2 opacity-10 pointer-events-none">
-                                    <Calendar size={60} className="text-medical-500"/>
+                                    <Calendar size={40} className="text-medical-500"/>
                                 </div>
-                                <label className="block text-xs font-bold text-medical-700 uppercase mb-3 tracking-wide flex items-center gap-2">
-                                    <Calendar size={14}/> Ngày vào viện
+                                <label className="block text-xs font-bold text-medical-700 uppercase mb-2 tracking-wide flex items-center gap-1.5">
+                                    <Calendar size={12}/> Ngày vào viện
                                 </label>
-                                <div className="flex items-center gap-3 relative z-10">
-                                    <button type="button" onClick={() => changeAdmissionDate(-1)} className="p-3 bg-white shadow-sm border border-medical-200 rounded-xl hover:bg-medical-100 active:scale-95 transition-all">
-                                        <ChevronLeft size={22} className="text-medical-700"/>
+                                <div className="flex items-center gap-2 relative z-10">
+                                    <button type="button" onClick={() => changeAdmissionDate(-1)} className="p-2 bg-white shadow-sm border border-medical-200 rounded-lg hover:bg-medical-100 active:scale-95 transition-all">
+                                        <ChevronLeft size={18} className="text-medical-700"/>
                                     </button>
                                     <div className="relative flex-1">
-                                        <input 
-                                            type="date" 
+                                        <input
+                                            type="date"
                                             value={manualForm.admissionDate}
                                             onChange={(e) => handleManualChange('admissionDate', e.target.value)}
-                                            className="w-full bg-white border-2 border-medical-500 rounded-xl p-3 text-center text-xl font-extrabold text-slate-800 shadow-sm focus:ring-4 focus:ring-medical-500/30 outline-none"
+                                            className="w-full bg-white border border-medical-500 rounded-lg p-2 text-center text-base font-bold text-slate-800 shadow-sm focus:ring-2 focus:ring-medical-500/30 outline-none"
                                         />
                                     </div>
-                                    <button type="button" onClick={() => changeAdmissionDate(1)} className="p-3 bg-white shadow-sm border border-medical-200 rounded-xl hover:bg-medical-100 active:scale-95 transition-all">
-                                        <ChevronRight size={22} className="text-medical-700"/>
+                                    <button type="button" onClick={() => changeAdmissionDate(1)} className="p-2 bg-white shadow-sm border border-medical-200 rounded-lg hover:bg-medical-100 active:scale-95 transition-all">
+                                        <ChevronRight size={18} className="text-medical-700"/>
                                     </button>
                                 </div>
                             </div>

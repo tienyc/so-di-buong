@@ -1,5 +1,5 @@
 import { db } from './firebase'; 
-import { collection, getDocs, doc, setDoc, getDoc, deleteDoc, query, where, getDocsFromServer } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, deleteDoc, query, where, getDocsFromServer } from 'firebase/firestore';
 import { Patient, MedicalOrder, PatientStatus } from '../types';
 import { SettingsPayload } from './sheetMapping'; // Giả định SettingsPayload đã bao gồm các URL
 
@@ -10,20 +10,22 @@ import { SettingsPayload } from './sheetMapping'; // Giả định SettingsPaylo
 export async function fetchAllData(): Promise<Patient[]> {
     const patientsCol = collection(db, 'patients');
     const q = query(patientsCol, where("status", "!=", PatientStatus.ARCHIVED));
-    const patientSnapshot = await getDocs(q);
-    
+    const patientSnapshot = await getDocsFromServer(q);
+
     const patientList = patientSnapshot.docs.map(doc => {
         const data = doc.data();
-        return {
+        const patient = {
             ...data,
             id: doc.id,
             // Đảm bảo các trường string có fallback để tránh lỗi .trim()/.split()
-            surgeryDate: data.surgeryDate || "", 
+            surgeryDate: data.surgeryDate || "",
             fullName: data.fullName || data.fullname || "", // Thêm fallback cho trường name
             insuranceNumber: data.insuranceNumber || ""
-        } as Patient;
+        } as unknown as Patient;
+
+        return patient;
     });
-    
+
     return patientList;
 }
 

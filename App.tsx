@@ -195,26 +195,26 @@ const App: React.FC = () => {
         }));
         setRooms(updatedRooms);
         const patient = updatedRooms.flatMap(r => r.patients).find(p => p.id === id);
-        
+
         if (patient) {
             try {
                 if (!patient.isScheduledForSurgery && updates.surgeryDate) patient.isScheduledForSurgery = true;
                 await savePatient(patient);
-                
+
                 const hasSurgeryUpdate = updates.surgeryDate !== undefined || updates.surgeryTime !== undefined || updates.surgeonName !== undefined;
-                
+
                 // LOGIC ĐỒNG BỘ MỚI:
                 if (hasSurgeryUpdate && patient.surgeryDate && surgerySheetUrl) {
                     const syncResult = await syncSurgeryToKhoa(surgerySheetUrl, patient);
-                    
+
                     if (syncResult.success) {
                          setNotification({ message: syncResult.message || 'Đồng bộ lịch mổ thành công.', type: 'success' });
                     } else {
                          setNotification({ message: `Đồng bộ thất bại: ${syncResult.error || 'Lỗi không xác định'}`, type: 'error' });
                     }
                 }
-            } catch (err) { 
-                setNotification({ message: 'Lỗi lưu thông tin', type: 'error' }); 
+            } catch (err) {
+                setNotification({ message: 'Lỗi lưu thông tin', type: 'error' });
             }
         }
     };
@@ -311,7 +311,7 @@ const App: React.FC = () => {
     const handleCancelDischarge = async (id: string) => {
         if (window.confirm('Xác nhận bệnh nhân tiếp tục nằm viện?')) {
             try {
-                await handleUpdatePatient(id, { dischargeDate: '' });
+                await handleUpdatePatient(id, { dischargeDate: '', dischargeConfirmed: false });
                 setNotification({ message: 'Đã hủy lịch ra viện', type: 'success' });
                 await loadDataFromSheet();
             } catch {
@@ -493,18 +493,29 @@ const App: React.FC = () => {
                     {/* Dòng 2: Search & Filters (Tối giản hơn) */}
                     {currentView !== AppView.SETTINGS && currentView !== AppView.STATISTICS && (
                         <div className="space-y-2.5">
-                            
-                            {/* DATE FILTER - Luôn hiện < >, nút X riêng */}
+
+                            {/* SEARCH BAR & DATE FILTER - Cùng 1 hàng */}
                             <div className="flex items-center gap-2">
-                                <div className="flex items-center bg-gray-100 rounded-lg p-1 h-10 flex-1">
-                                    {/* Nút giảm ngày */}
-                                    <button onClick={() => handleShiftDate(-1)} className="w-8 h-8 flex items-center justify-center rounded-md bg-white shadow-sm text-gray-600 hover:text-blue-600 active:scale-95 shrink-0">
+                                {/* Search bar */}
+                                <div className="relative group flex-1">
+                                    <input
+                                        type="text"
+                                        placeholder="Tìm tên, số phòng..."
+                                        className="w-full bg-gray-100 border-none rounded-2xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-medical-500/50 focus:bg-white transition-all"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                    <Search className="absolute left-3.5 top-3 text-gray-400 group-focus-within:text-medical-500" size={18} />
+                                </div>
+
+                                {/* Date filter compact */}
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => handleShiftDate(-1)} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 shrink-0">
                                         <ChevronLeft size={18} />
                                     </button>
 
-                                    {/* Khu vực hiển thị ngày - Click để mở calendar */}
                                     <div
-                                        className="flex-1 flex items-center justify-center gap-1.5 px-2 text-sm font-bold text-slate-700 relative min-h-[32px] cursor-pointer"
+                                        className="flex items-center justify-center gap-1.5 px-3 h-9 bg-gray-100 rounded-lg text-sm font-bold text-slate-700 cursor-pointer hover:bg-gray-200 transition-colors min-w-[80px]"
                                         onClick={() => dateInputRef.current?.showPicker?.() || dateInputRef.current?.focus()}
                                     >
                                         <input
@@ -512,51 +523,32 @@ const App: React.FC = () => {
                                             type="date"
                                             value={admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : ''}
                                             onChange={(e) => setAdmissionDateFilterDate(e.target.value ? new Date(e.target.value) : null)}
-                                            className="absolute inset-0 opacity-0 pointer-events-none"
+                                            className="absolute opacity-0 pointer-events-none"
                                             title="Chọn ngày vào viện"
                                         />
                                         {admissionDateFilterDate ? (
                                             <>
-                                                <CalendarDays size={16} className="text-blue-500 shrink-0" />
-                                                <span>{formatDateDisplay(admissionDateFilterDate)}</span>
-                                                {/* Nút X nổi */}
+                                                <CalendarDays size={14} className="text-blue-500 shrink-0" />
+                                                <span className="text-xs">{formatDateDisplay(admissionDateFilterDate)}</span>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleClearDate(); }}
-                                                    className="ml-1 w-5 h-5 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-200 active:scale-95 z-20 relative"
+                                                    className="w-4 h-4 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-200 active:scale-95"
                                                 >
-                                                    <X size={12} />
+                                                    <X size={10} />
                                                 </button>
                                             </>
                                         ) : (
-                                            <span className="text-gray-400 font-medium text-xs">Chọn ngày</span>
+                                            <>
+                                                <CalendarDays size={14} className="text-gray-400 shrink-0" />
+                                                <span className="text-xs text-gray-400">Ngày</span>
+                                            </>
                                         )}
                                     </div>
 
-                                    {/* Nút tăng ngày */}
-                                    <button onClick={() => handleShiftDate(1)} className="w-8 h-8 flex items-center justify-center rounded-md bg-white shadow-sm text-gray-600 hover:text-blue-600 active:scale-95 shrink-0">
+                                    <button onClick={() => handleShiftDate(1)} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 shrink-0">
                                         <ChevronRight size={18} />
                                     </button>
                                 </div>
-
-                                {/* Nút Hôm nay */}
-                                <button
-                                    onClick={() => setAdmissionDateFilterDate(new Date())}
-                                    className="px-3 h-10 bg-blue-500 text-white rounded-lg text-sm font-bold hover:bg-blue-600 active:scale-95 transition-all shrink-0"
-                                >
-                                    Hôm nay
-                                </button>
-                            </div>
-                            
-                            {/* KHU VỰC 2: SEARCH BAR */}
-                            <div className="relative group">
-                                <input 
-                                    type="text" 
-                                    placeholder="Tìm tên, số phòng..." 
-                                    className="w-full bg-gray-100 border-none rounded-2xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-medical-500/50 focus:bg-white transition-all"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                />
-                                <Search className="absolute left-3.5 top-3 text-gray-400 group-focus-within:text-medical-500" size={18} />
                             </div>
 
                             {/* KHU VỰC 3: DROPDOWNS */}
@@ -781,19 +773,18 @@ const App: React.FC = () => {
                                                         const chevronClass = 'text-white';
 
                                                         return (
-                                                            <div key={block.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-soft border border-white/50 mb-4 overflow-hidden">
+                                                            <div key={block.id} className="bg-white/70 backdrop-blur-sm rounded-3xl shadow-sm border border-white/50 mb-3 overflow-hidden">
                                                                 <div
-                                                                    className={`px-5 py-4 flex justify-between items-center cursor-pointer select-none transition-colors ${blockClass}`}
+                                                                    className={`px-4 py-3 rounded-3xl flex justify-between items-center cursor-pointer select-none transition-colors ${blockClass}`}
                                                                     onClick={() => setExpandedBlocks(prev => ({...prev, [block.id]: !prev[block.id]}))}
                                                                 >
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="p-2 rounded-xl bg-white/20">
-                                                                            <Building size={20} className={iconClass} />
-                                                                        </div>
-                                                                        <span className={`font-bold text-lg ${textClass}`}>{block.name}</span>
-                                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${badgeClass}`}>{blockPatients.length}</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`font-bold text-base ${textClass}`}>{block.name}</span>
                                                                     </div>
-                                                                    {isBlockExpanded ? <ChevronUp size={20} className={chevronClass}/> : <ChevronDown size={20} className={chevronClass}/>}
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${badgeClass}`}>{blockPatients.length} bệnh nhân</span>
+                                                                        {isBlockExpanded ? <ChevronUp size={18} className={chevronClass}/> : <ChevronDown size={18} className={chevronClass}/>}
+                                                                    </div>
                                                                 </div>
 
                                                                 {expandedBlocks[block.id] && (
