@@ -169,3 +169,117 @@ export const suggestOrders = async (diagnosis: string, history: string) => {
         return [];
     }
 };
+
+export const generateSurgerySchedule = async (patients: any[], alreadyScheduled: any[]) => {
+    try {
+        const patientsToSchedule = patients.map(p => ({ 
+            id: p.id,
+            fullName: p.fullName,
+            diagnosis: p.diagnosis,
+        }));
+
+        const scheduledForContext = alreadyScheduled.map(p => ({
+            id: p.id,
+            operatingRoom: p.operatingRoom,
+            surgeryTime: p.surgeryTime,
+            surgeonName: p.surgeonName,
+        }));
+
+        if (patientsToSchedule.length === 0) {
+            return [];
+        }
+
+        const prompt = `
+1.  **VAI TRÒ & MỤC TIÊU**
+    Bạn là Trợ lý AI Điều phối Lịch mổ, chuyên khoa Chấn thương Chỉnh hình. Nhiệm vụ của bạn là nhận một danh sách bệnh nhân, xác định thứ tự ưu tiên, tính toán thời gian mổ, và xếp lịch mổ cho họ vào các phòng mổ có sẵn một cách tối ưu nhất, **tránh xung đột với các ca đã có lịch sẵn**.
+
+2.  **THÔNG TIN ĐẦU VÀO**
+    -   **Danh sách bệnh nhân cần xếp:** Một mảng JSON các bệnh nhân, mỗi người có \`id\`, \`fullName\`, và \`diagnosis\`.
+    -   **Danh sách bệnh nhân đã có lịch:** Dùng để kiểm tra và tránh xếp trùng giờ, trùng phòng.
+    -   **Lịch làm việc:**
+        -   Bắt đầu ca sáng: 08:00
+        -   Kết thúc ca sáng (nghỉ trưa): 11:30
+        -   Bắt đầu ca chiều: 13:30
+        -   Kết thúc ca chiều: 17:00
+    -   **Phòng mổ có sẵn:** ["Phòng 1", "Phòng 7", "Phòng 8", "Phòng 9", "Phòng 10"]
+
+3.  **QUY TRÌNH XỬ LÝ (Từng bước)**
+
+    **Bước 1: Phân tích & Ước tính thời gian cho mỗi bệnh nhân CẦN XẾP LỊCH**
+    a.  **Xác định 'PPPT' (Phương pháp phẫu thuật):** Dựa vào \`diagnosis\`.
+        -   "PT", "Phương tiện", "nẹp vít", "Đinh K" -> "Tháo phương tiện"
+        -   "U phần mềm", "U..." -> "Bóc u"
+        -   "Nhiễm trùng" -> "PT nạo viêm"
+        -   "Khuyết hổng" -> "PT chuyển vạt da"
+        -   "Gãy xương" -> "PT kết hợp xương"
+        -   "Gãy cổ xương đùi" -> "PT thay khớp háng bán phần"
+        -   "Hoại tử chỏm xương đùi" -> "PT thay khớp háng toàn phần"
+        -   "Đứt dây chằng" -> "PTNS tái tạo dây chằng"
+    b.  **Ước tính 'duration' (Thời gian mổ):** Dựa vào 'PPPT'.
+        -   **60 phút:** "PT thay khớp háng bán phần", "PT thay khớp háng toàn phần", "PT chuyển vạt da", "PTNS tái tạo dây chằng", "PT kết hợp xương".
+        -   **30 phút:** "Tháo phương tiện", "Bóc u", "PT nạo viêm".
+
+    **Bước 2: Sắp xếp thứ tự ưu tiên mổ (chỉ cho bệnh nhân CẦN XẾP LỊCH)**
+    1.  **Nhiễm trùng:** \`diagnosis\` chứa "viêm", "nhiễm trùng", "áp xe", "hoại tử".
+    2.  **Ca đại phẫu:** \`duration\` là 60 phút.
+    3.  **Ca trung phẫu:** \`duration\` là 30 phút.
+
+    **Bước 3: Xếp lịch vào các phòng mổ**
+    Tuần tự xếp từng bệnh nhân (theo thứ tự đã ưu tiên) vào các "slot" trống.
+    -   **QUAN TRỌNG NHẤT:** Một "slot" chỉ được coi là trống nếu nó không bị trùng giờ và trùng phòng với bất kỳ ca nào trong danh sách **BỆNH NHÂN ĐÃ CÓ LỊCH**.
+    -   Phải tuân thủ lịch nghỉ trưa (không có ca nào bắc cầu qua 11:30 - 13:30).
+    -   **Quy tắc chọn phòng:**
+        -   Nếu \`diagnosis\` chứa "viêm", "nhiễm trùng", "áp xe", "hoại tử" -> **Ưu tiên Phòng 1**.
+        -   Các trường hợp còn lại -> **Ưu tiên Phòng 7, 8, 9, 10**.
+
+4.  **DỮ LIỆU ĐẦU VÀO**
+
+    **A. BỆNH NHÂN CẦN XẾP LỊCH:**
+    \`\`\`json
+    ${JSON.stringify(patientsToSchedule)}
+    \`\`\`
+
+    **B. BỆNH NHÂN ĐÃ CÓ LỊCH (Để tránh trùng lặp):**
+    \`\`\`json
+    ${JSON.stringify(scheduledForContext)}
+    \`\`\`
+
+5.  **ĐỊNH DẠNG ĐẦU RA**
+    Chỉ trả về một mảng JSON. Mỗi object phải chứa:
+    -   \`id\`: ID của bệnh nhân.
+    -   \`PPPT\`: Phương pháp phẫu thuật đã xác định.
+    -   \`operatingRoom\`: Phòng mổ được gán.
+    -   \`surgeryTime\`: Giờ bắt đầu mổ, định dạng "HH:mm".
+    -   \`surgeonName\`: Nếu 'PPPT' chứa "PTNS" hoặc "thay khớp", điền "Ts Minh", ngược lại để trống.
+`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            id: { type: Type.STRING },
+                            PPPT: { type: Type.STRING },
+                            operatingRoom: { type: Type.STRING },
+                            surgeryTime: { type: Type.STRING },
+                            surgeonName: { type: Type.STRING },
+                        },
+                        required: ["id", "PPPT", "operatingRoom", "surgeryTime"]
+                    }
+                }
+            }
+        });
+
+        const suggestions = JSON.parse(response.text || '[]');
+        return suggestions;
+
+    } catch (error) {
+        console.error("Lỗi khi tạo lịch mổ:", error);
+        return { error: true, message: "Không thể nhận được gợi ý từ AI. Vui lòng thử lại." };
+    }
+};

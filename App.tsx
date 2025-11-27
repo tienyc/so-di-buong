@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, OrderType } from './types'; 
 import { fetchAllData, savePatient, saveOrder, confirmDischarge, fetchSettings } from './services/api';
+import { generateSurgerySchedule } from './services/geminiService';
 import { buildRoomBlocksFromConfig, WardConfig } from './services/sheetMapping';
 import { syncSurgeryToKhoa } from './services/surgerySync';
 import PatientCard from './components/PatientCard';
@@ -10,8 +11,9 @@ import PatientEditModal from './components/PatientEditModal';
 import AddPatientModal from './components/AddPatientModal';
 import SettingsView from './components/SettingsView';
 import StatisticsView from './components/StatisticsView';
-import PatientTableView from './components/PatientTableView'; 
-import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays } from 'lucide-react';
+import PatientTableView from './components/PatientTableView';
+import SurgerySchedulerModal from './components/SurgerySchedulerModal';
+import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays, Wand2 } from 'lucide-react';
 
 // --- HELPER FUNCTIONS ---
 const removeVietnameseTones = (str: string) => {
@@ -99,6 +101,10 @@ const App: React.FC = () => {
     const [transferMode, setTransferMode] = useState<'TRANSFER' | 'DISCHARGE'>('TRANSFER');
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
+    const [isSurgerySchedulerModalOpen, setIsSurgerySchedulerModalOpen] = useState(false);
+    
+    const [isScheduling, setIsScheduling] = useState(false);
+    const [suggestedSchedule, setSuggestedSchedule] = useState<any[]>([]);
 
     const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
     const [expandedBlocks, setExpandedBlocks] = useState<{[key: string]: boolean}>({});
@@ -221,11 +227,37 @@ const App: React.FC = () => {
 
     const handleAddPatients = async (newPatients: Patient[]) => {
         try {
-            await Promise.all(newPatients.map(p => savePatient(p)));
-            setNotification({ message: 'Thêm bệnh nhân thành công', type: 'success' });
+            const today = new Date().toISOString().split('T')[0];
+            let serviceRoomPatientsScheduled = 0;
+
+            const processedPatients = newPatients.map(patient => {
+                const isServiceRoom = /^(dịch vụ|dv)\s*[1-6]$/i.test(patient.roomNumber);
+                const isNewAdmissionToday = patient.admissionDate === today;
+
+                if (isServiceRoom && isNewAdmissionToday) {
+                    serviceRoomPatientsScheduled++;
+                    return {
+                        ...patient,
+                        isScheduledForSurgery: true,
+                        status: PatientStatus.SURGERY_READY,
+                    };
+                }
+                return patient;
+            });
+
+            await Promise.all(processedPatients.map(p => savePatient(p)));
+            
+            let successMessage = 'Thêm bệnh nhân thành công';
+            if (serviceRoomPatientsScheduled > 0) {
+                successMessage += `. ${serviceRoomPatientsScheduled} bệnh nhân phòng dịch vụ đã được tự động đưa vào danh sách chờ mổ.`;
+            }
+            
+            setNotification({ message: successMessage, type: 'success' });
             loadDataFromSheet();
             setIsAddPatientModalOpen(false);
-        } catch (e) { setNotification({ message: 'Lỗi thêm bệnh nhân', type: 'error' }); }
+        } catch (e) { 
+            setNotification({ message: 'Lỗi thêm bệnh nhân', type: 'error' }); 
+        }
     };
 
     const handleAddOrder = async (orderData: Omit<MedicalOrder, 'id'>, isDischarge: boolean, dischargeDate?: string) => {
@@ -373,7 +405,7 @@ const App: React.FC = () => {
     const passesGlobalFilters = (p: Patient) => {
         if (currentView === AppView.WARD_ROUND && p.status === PatientStatus.ARCHIVED) return false;
         if (currentView === AppView.SEVERE_CASES && (!p.isSevere || p.status === PatientStatus.ARCHIVED)) return false;
-        if (currentView === AppView.SURGERY_SCHEDULE && (!p.isScheduledForSurgery || p.status === PatientStatus.ARCHIVED)) return false;
+        if (currentView === AppView.SURGERY_SCHEDULE && p.status === PatientStatus.ARCHIVED) return false;
         if (currentView === AppView.DISCHARGE_LIST && (!p.dischargeDate || p.status === PatientStatus.ARCHIVED || p.dischargeConfirmed)) return false;
 
         if (selectedRoomNumber && p.roomNumber !== selectedRoomNumber) return false;
@@ -389,10 +421,15 @@ const App: React.FC = () => {
         return true;
     };
 
-    const filteredPatients = rooms.flatMap(r => {
-        if (selectedRoomBlockId && r.id !== selectedRoomBlockId) return [];
-        return r.patients;
-    }).filter(passesGlobalFilters);
+    const allPatients = useMemo(() => rooms.flatMap(r => r.patients), [rooms]);
+
+    // This state will hold the temporary, reordered list for the UI
+    const [uiOrderedPatients, setUiOrderedPatients] = useState<Patient[] | null>(null);
+
+    const filteredPatients = useMemo(() => {
+        const baseList = uiOrderedPatients || allPatients;
+        return baseList.filter(passesGlobalFilters);
+    }, [allPatients, uiOrderedPatients, passesGlobalFilters]);
 
     // Grouping for Surgery
     const { surgeryGroups, unscheduledPatients } = useMemo(() => {
@@ -437,6 +474,74 @@ const App: React.FC = () => {
             !p.dischargeConfirmed
         ).length;
     }, [rooms]);
+
+    const handleScanServicePatients = async () => {
+        const today = new Date().toISOString().split('T')[0];
+        const serviceRooms = ["dịch vụ 1", "dịch vụ 2", "dịch vụ 3", "dịch vụ 4", "dịch vụ 5 ( b9)", "dịch vụ 6 (b10)"];
+        
+        const patientsToSchedule = allPatients.filter(p => {
+            const roomNumberLower = p.roomNumber.toLowerCase();
+            return !p.isScheduledForSurgery &&
+                   p.admissionDate === today &&
+                   serviceRooms.includes(roomNumberLower);
+        });
+
+        if (patientsToSchedule.length === 0) {
+            setNotification({ message: 'Không tìm thấy bệnh nhân mới trong phòng dịch vụ cần đăng ký mổ.', type: 'success' });
+            return;
+        }
+
+        try {
+            await Promise.all(patientsToSchedule.map(p => handleUpdatePatient(p.id, {
+                isScheduledForSurgery: true,
+                status: PatientStatus.SURGERY_READY,
+            })));
+            setNotification({ message: `Đã tự động đăng ký mổ cho ${patientsToSchedule.length} bệnh nhân phòng dịch vụ.`, type: 'success' });
+            loadDataFromSheet();
+        } catch (error) {
+            setNotification({ message: 'Đã xảy ra lỗi khi đăng ký mổ cho bệnh nhân dịch vụ.', type: 'error' });
+        }
+    };
+
+    // --- AI SCHEDULER HANDLERS ---
+    const handleOpenSurgeryScheduler = async () => {
+        setIsScheduling(true);
+        setIsSurgerySchedulerModalOpen(true);
+        setSuggestedSchedule([]);
+
+        const scheduledPatients = [
+            ...surgeryGroups.today,
+            ...surgeryGroups.tomorrow,
+            ...surgeryGroups.upcoming,
+        ];
+        const result = await generateSurgerySchedule(unscheduledPatients, scheduledPatients);
+        
+        if (result && !result.error) {
+            setSuggestedSchedule(result);
+        } else {
+             setNotification({ message: result.message || 'Lỗi khi sắp xếp lịch mổ.', type: 'error' });
+             setIsSurgerySchedulerModalOpen(false);
+        }
+        setIsScheduling(false);
+    };
+
+    const handleConfirmSchedule = (schedule: any[]) => {
+        const today = new Date().toISOString().split('T')[0];
+        schedule.forEach(item => {
+            const updates = {
+                surgeryMethod: item.PPPT,
+                operatingRoom: item.operatingRoom,
+                surgeonName: item.surgeonName,
+                surgeryTime: item.surgeryTime,
+                surgeryDate: today,
+            };
+            handleUpdatePatient(item.id, updates);
+        });
+
+        setIsSurgerySchedulerModalOpen(false);
+        setNotification({ message: `Đã áp dụng và xếp lịch cho ${schedule.length} bệnh nhân.`, type: 'success' });
+        loadDataFromSheet(); // Tải lại dữ liệu để cập nhật UI
+    };
 
     // --- RENDER ---
     return (
@@ -711,13 +816,32 @@ const App: React.FC = () => {
                                         </div>
                                         {surgeryTab === 'WAITING' && (
                                              <div className="space-y-3">
-                                                {unscheduledPatients.map(p => (
-                                                    <div key={p.id} className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex items-center justify-between">
-                                                        <div><div className="font-bold text-slate-800">{p.fullName}</div><div className="text-xs text-gray-500">{p.diagnosis}</div></div>
-                                                        <button onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95">Xếp lịch</button>
-                                                    </div>
-                                                ))}
-                                                {unscheduledPatients.length === 0 && <div className="text-center text-gray-400 py-8">Không có bệnh nhân chờ.</div>}
+                                                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    <button 
+                                                        onClick={handleOpenSurgeryScheduler}
+                                                        disabled={isScheduling || unscheduledPatients.length === 0}
+                                                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-indigo-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        <Wand2 size={18} />
+                                                        {isScheduling ? 'AI đang phân tích...' : 'Xếp lịch nhanh với AI'}
+                                                    </button>
+                                                    <button 
+                                                        onClick={handleScanServicePatients}
+                                                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-cyan-500/30 transition-all duration-300"
+                                                    >
+                                                        Quét BN Dịch Vụ
+                                                    </button>
+                                                </div>
+
+                                                <div className="pt-4 space-y-3">
+                                                    {unscheduledPatients.map(p => (
+                                                        <div key={p.id} className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex items-center justify-between">
+                                                            <div><div className="font-bold text-slate-800">{p.fullName}</div><div className="text-xs text-gray-500">{p.diagnosis}</div></div>
+                                                            <button onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95">Xếp lịch</button>
+                                                        </div>
+                                                    ))}
+                                                    {unscheduledPatients.length === 0 && <div className="text-center text-gray-400 py-8">Không có bệnh nhân chờ.</div>}
+                                                </div>
                                              </div>
                                         )}
                                         {surgeryTab === 'SCHEDULED' && (
@@ -813,7 +937,7 @@ const App: React.FC = () => {
                         <button key={item.id} onClick={() => setCurrentView(item.id)} className={`group flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === item.id ? `text-${item.color}-600` : 'text-slate-500 hover:text-slate-700'}`}>
                             <div className={`p-1 rounded-xl relative ${currentView === item.id ? `bg-${item.color}-50` : ''}`}>
                                 <item.icon size={24} strokeWidth={currentView === item.id ? 2.5 : 2} />
-                                {item.count && item.count > 0 && <div className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-${item.color}-500 rounded-full animate-pulse shadow-lg flex items-center justify-center px-1`}><span className="text-white text-[10px] font-extrabold">{item.count}</span></div>}
+                                {item.count > 0 && <div className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-${item.color}-500 rounded-full animate-pulse shadow-lg flex items-center justify-center px-1`}><span className="text-white text-[10px] font-extrabold">{item.count}</span></div>}
                             </div>
                             <span className="text-[10px] font-bold tracking-wide">{item.label}</span>
                         </button>
@@ -825,6 +949,14 @@ const App: React.FC = () => {
             <OrderModal isOpen={isOrderModalOpen} onClose={() => setIsOrderModalOpen(false)} onAddOrder={handleAddOrder} patientName={selectedPatientName} doctors={doctors} />
             <TransferModal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} mode={transferMode} patientName={selectedPatientName} rooms={rooms} currentRoomId={selectedRoomBlockId} onConfirm={handleTransferConfirm} />
             <PatientEditModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} patient={selectedPatient} onSave={handleUpdatePatient} doctors={doctors} operatingRooms={operatingRooms} anesthesiaMethods={anesthesiaMethods} surgeryClassifications={surgeryClassifications} surgeryRequirements={surgeryRequirements} />
+            <SurgerySchedulerModal 
+                isOpen={isSurgerySchedulerModalOpen}
+                onClose={() => setIsSurgerySchedulerModalOpen(false)}
+                patients={unscheduledPatients}
+                suggestedSchedule={suggestedSchedule}
+                isLoading={isScheduling}
+                onConfirm={handleConfirmSchedule}
+            />
         </div>
     );
 };
