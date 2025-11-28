@@ -211,6 +211,34 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
     };
     const isNew = isNewPatient();
 
+    const getRoomTag = () => {
+        const roomRaw = safeString(patient.roomNumber).trim();
+        const wardRaw = safeString(patient.ward).trim();
+        const source = roomRaw || wardRaw;
+        if (!source) return '';
+        const normalized = source.toLowerCase();
+
+        if (normalized.startsWith('dịch vụ') || normalized.startsWith('dv')) {
+            const digits = source.match(/\d+/)?.[0] || '';
+            return `DV${digits}`;
+        }
+        if (normalized.includes('cấp cứu') || normalized.includes('cap cuu')) {
+            const digits = source.match(/\d+/)?.[0];
+            return digits ? `CC${digits}` : 'CC';
+        }
+        if (normalized.includes('hậu phẫu') || normalized.includes('hau phau')) return 'HP';
+        if (normalized.includes('tiền phẫu') || normalized.includes('tien phau')) return 'TP';
+        if (normalized.includes('nhiễm trùng') || normalized.includes('nhiem trung')) return 'N.Trùng';
+        if (normalized.includes('tuyến cao') || normalized.includes('tuyen cao') || normalized.includes('trung cao')) return 'Tr.Cao';
+        if (normalized.includes('cao tuổi') || normalized.includes('cao tuoi')) return 'C.Tuổi';
+
+        const words = source.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return source.slice(0,4).toUpperCase();
+        if (words.length === 1) return words[0].slice(0,6).toUpperCase();
+        return words.slice(0,2).map(w => (w[0] || '').toUpperCase()).join('');
+    };
+    const roomTag = getRoomTag();
+
     const getCardStyle = () => {
         if (patient.status === PatientStatus.DISCHARGED) return 'bg-slate-50 border-l-[3px] border-l-slate-400 opacity-60 shadow-sm';
         if (isSevere) return 'bg-white border-l-[3px] border-l-red-500 [box-shadow:0_0_8px_rgba(239,68,68,0.4),0_1px_3px_0_rgba(0,0,0,0.1)]';
@@ -246,8 +274,15 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                 {patient.age}t
                             </span>
                         </div>
-                        <div className="flex flex-col items-end shrink-0 ml-2">
-                            {rightSideBadge}
+                        <div className="flex flex-col items-end shrink-0 ml-2 text-right">
+                            <div className="flex items-center gap-1">
+                                {roomTag && (
+                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100/70 px-2 py-0.5 rounded-full border border-slate-200/70">
+                                        {roomTag}
+                                    </span>
+                                )}
+                                {rightSideBadge}
+                            </div>
                         </div>
                     </div>
 

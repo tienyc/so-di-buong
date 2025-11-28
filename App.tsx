@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, OrderType } from './types'; 
 import { fetchAllData, savePatient, saveOrder, confirmDischarge, fetchSettings } from './services/api';
 import { generateSurgerySchedule } from './services/geminiService';
 import { buildRoomBlocksFromConfig, WardConfig } from './services/sheetMapping';
-import { syncSurgeryToKhoa } from './services/surgerySync';
+import { syncSurgeryToKhoa, triggerHospitalSync } from './services/surgerySync';
 import PatientCard from './components/PatientCard';
 import OrderModal from './components/OrderModal';
 import TransferModal from './components/TransferModal';
@@ -13,7 +13,7 @@ import SettingsView from './components/SettingsView';
 import StatisticsView from './components/StatisticsView';
 import PatientTableView from './components/PatientTableView';
 import SurgerySchedulerModal from './components/SurgerySchedulerModal';
-import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays, Wand2 } from 'lucide-react';
+import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays, Wand2, UploadCloud } from 'lucide-react';
 
 // --- HELPER FUNCTIONS ---
 const removeVietnameseTones = (str: string) => {
@@ -75,6 +75,7 @@ const App: React.FC = () => {
     
     const [sheetUrl, setSheetUrl] = useState<string>('');
     const [surgerySheetUrl, setSurgerySheetUrl] = useState<string>('');
+    const [hospitalSyncUrl, setHospitalSyncUrl] = useState<string>('');
 
     // Main Data
     const [rooms, setRooms] = useState<RoomBlock[]>([]);
@@ -105,6 +106,8 @@ const App: React.FC = () => {
     
     const [isScheduling, setIsScheduling] = useState(false);
     const [suggestedSchedule, setSuggestedSchedule] = useState<any[]>([]);
+    const [isHospitalSyncing, setIsHospitalSyncing] = useState(false);
+    const [showServiceOnly, setShowServiceOnly] = useState(false);
 
     const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
     const [expandedBlocks, setExpandedBlocks] = useState<{[key: string]: boolean}>({});
@@ -144,6 +147,7 @@ const App: React.FC = () => {
             setWardConfigs(settings.wards || []);
             setSheetUrl(settings.sheetUrl || '');
             setSurgerySheetUrl(settings.surgerySheetUrl || '');
+            setHospitalSyncUrl(settings.hospitalSyncUrl || '');
             
             const patientsWithOrders = await fetchAllData();
             setRooms(buildRoomBlocksFromConfig(patientsWithOrders, settings.wards || []));
@@ -175,6 +179,29 @@ const App: React.FC = () => {
 
     // --- DERIVED DATA & ACTION HANDLERS ---
     
+    const todayString = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+    const isServiceRoomName = useCallback((room?: string) => {
+        if (!room) return false;
+        const normalizedRoom = room.trim().toLowerCase();
+        return normalizedRoom.startsWith('dịch vụ') || normalizedRoom.startsWith('dv');
+    }, []);
+
+    const isServiceRoomPatient = useCallback((patient: Patient) => {
+        return isServiceRoomName(patient.roomNumber);
+    }, [isServiceRoomName]);
+
+    const matchesServiceFilter = useCallback((patient: Patient, dateMatch?: string | null) => {
+        if (!isServiceRoomPatient(patient)) return false;
+        if (!dateMatch) return true;
+        return normalizeDateString(patient.admissionDate) === dateMatch;
+    }, [isServiceRoomPatient]);
+
+    const isServicePatientToday = useCallback((patient: Patient) => (
+        matchesServiceFilter(patient, todayString)
+    ), [matchesServiceFilter, todayString]);
+
+
     const selectedPatient = useMemo(() => {
         for (const block of rooms) {
             const p = block.patients.find(p => p.id === selectedPatientId);
@@ -227,32 +254,8 @@ const App: React.FC = () => {
 
     const handleAddPatients = async (newPatients: Patient[]) => {
         try {
-            const today = new Date().toISOString().split('T')[0];
-            let serviceRoomPatientsScheduled = 0;
-
-            const processedPatients = newPatients.map(patient => {
-                const isServiceRoom = /^(dịch vụ|dv)\s*[1-6]$/i.test(patient.roomNumber);
-                const isNewAdmissionToday = patient.admissionDate === today;
-
-                if (isServiceRoom && isNewAdmissionToday) {
-                    serviceRoomPatientsScheduled++;
-                    return {
-                        ...patient,
-                        isScheduledForSurgery: true,
-                        status: PatientStatus.SURGERY_READY,
-                    };
-                }
-                return patient;
-            });
-
-            await Promise.all(processedPatients.map(p => savePatient(p)));
-            
-            let successMessage = 'Thêm bệnh nhân thành công';
-            if (serviceRoomPatientsScheduled > 0) {
-                successMessage += `. ${serviceRoomPatientsScheduled} bệnh nhân phòng dịch vụ đã được tự động đưa vào danh sách chờ mổ.`;
-            }
-            
-            setNotification({ message: successMessage, type: 'success' });
+            await Promise.all(newPatients.map(p => savePatient(p)));
+            setNotification({ message: 'Thêm bệnh nhân thành công', type: 'success' });
             loadDataFromSheet();
             setIsAddPatientModalOpen(false);
         } catch (e) { 
@@ -327,7 +330,18 @@ const App: React.FC = () => {
     };
 
     const handleRegisterSurgery = (id: string) => handleUpdatePatient(id, { isScheduledForSurgery: true });
-    const handleCancelSurgery = (id: string) => handleUpdatePatient(id, { isScheduledForSurgery: false, surgeryDate: '', surgeryTime: '' });
+    const handleCancelSurgery = (id: string) => handleUpdatePatient(id, {
+        isScheduledForSurgery: false,
+        surgeryDate: '',
+        surgeryTime: '',
+        operatingRoom: '',
+        surgeryMethod: '',
+        surgeonName: '',
+        anesthesiaMethod: '',
+        surgeryClassification: '',
+        surgeryRequirements: '',
+        surgeryNotes: '',
+    });
 
     const handleConfirmDischarge = async (id: string) => {
         if (window.confirm('Xác nhận bệnh nhân đã ra viện?')) {
@@ -406,6 +420,9 @@ const App: React.FC = () => {
         if (currentView === AppView.WARD_ROUND && p.status === PatientStatus.ARCHIVED) return false;
         if (currentView === AppView.SEVERE_CASES && (!p.isSevere || p.status === PatientStatus.ARCHIVED)) return false;
         if (currentView === AppView.SURGERY_SCHEDULE && p.status === PatientStatus.ARCHIVED) return false;
+        if (currentView === AppView.WARD_ROUND && showServiceOnly) {
+            if (!isServiceRoomPatient(p)) return false;
+        }
         if (currentView === AppView.DISCHARGE_LIST && (!p.dischargeDate || p.status === PatientStatus.ARCHIVED || p.dischargeConfirmed)) return false;
 
         if (selectedRoomNumber && p.roomNumber !== selectedRoomNumber) return false;
@@ -436,8 +453,8 @@ const App: React.FC = () => {
         const today = new Date().toISOString().split('T')[0];
         const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
         const hasDate = (p: Patient) => typeof p.surgeryDate === 'string' && p.surgeryDate.trim() !== '';
-        const waiting = filteredPatients.filter(p => !hasDate(p));
-        const scheduled = filteredPatients.filter(p => hasDate(p));
+        const waiting = filteredPatients.filter(p => p.isScheduledForSurgery && !hasDate(p));
+        const scheduled = filteredPatients.filter(p => p.isScheduledForSurgery && hasDate(p));
         return {
             surgeryGroups: {
                 today: scheduled.filter(p => normalizeDateString(p.surgeryDate) === today).sort((a,b) => (a.surgeryTime||'').localeCompare(b.surgeryTime||'')),
@@ -447,6 +464,8 @@ const App: React.FC = () => {
             unscheduledPatients: waiting
         };
     }, [filteredPatients]);
+
+    const serviceFilterDate = admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : null;
 
     const dischargeGroups = useMemo(() => {
         if (currentView !== AppView.DISCHARGE_LIST) return { today: [], tomorrow: [], upcoming: [], overdue: [] };
@@ -476,15 +495,8 @@ const App: React.FC = () => {
     }, [rooms]);
 
     const handleScanServicePatients = async () => {
-        const today = new Date().toISOString().split('T')[0];
-        const serviceRooms = ["dịch vụ 1", "dịch vụ 2", "dịch vụ 3", "dịch vụ 4", "dịch vụ 5 ( b9)", "dịch vụ 6 (b10)"];
-        
-        const patientsToSchedule = allPatients.filter(p => {
-            const roomNumberLower = p.roomNumber.toLowerCase();
-            return !p.isScheduledForSurgery &&
-                   p.admissionDate === today &&
-                   serviceRooms.includes(roomNumberLower);
-        });
+        const targetDate = admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : null;
+        const patientsToSchedule = allPatients.filter(p => !p.isScheduledForSurgery && matchesServiceFilter(p, targetDate));
 
         if (patientsToSchedule.length === 0) {
             setNotification({ message: 'Không tìm thấy bệnh nhân mới trong phòng dịch vụ cần đăng ký mổ.', type: 'success' });
@@ -500,6 +512,29 @@ const App: React.FC = () => {
             loadDataFromSheet();
         } catch (error) {
             setNotification({ message: 'Đã xảy ra lỗi khi đăng ký mổ cho bệnh nhân dịch vụ.', type: 'error' });
+        }
+    };
+
+    const handleTriggerHospitalSync = async () => {
+        if (!hospitalSyncUrl) {
+            setNotification({ message: 'Chưa cấu hình link Web App đồng bộ BV.', type: 'error' });
+            return;
+        }
+
+        try {
+            setIsHospitalSyncing(true);
+            const result = await triggerHospitalSync(hospitalSyncUrl);
+
+            if (result.success) {
+                setNotification({ message: result.message || 'Đã gửi yêu cầu đồng bộ lên BV.', type: 'success' });
+            } else {
+                setNotification({ message: result.error || 'Đồng bộ BV thất bại.', type: 'error' });
+            }
+        } catch (error) {
+            console.error('Error triggering hospital sync:', error);
+            setNotification({ message: 'Không thể kết nối Web App đồng bộ BV.', type: 'error' });
+        } finally {
+            setIsHospitalSyncing(false);
         }
     };
 
@@ -657,7 +692,7 @@ const App: React.FC = () => {
                             </div>
 
                             {/* KHU VỰC 3: DROPDOWNS */}
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-start flex-wrap">
                                 <div className="relative flex-1">
                                     <Filter size={14} className="absolute left-3 top-3 text-gray-500 pointer-events-none"/>
                                     <select 
@@ -682,6 +717,15 @@ const App: React.FC = () => {
                                     </select>
                                     <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none"/>
                                 </div>
+                                {currentView === AppView.WARD_ROUND && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowServiceOnly(prev => !prev)}
+                                        className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border ${showServiceOnly ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'}`}
+                                    >
+                                        <Filter size={12} /> {showServiceOnly ? 'Đang lọc BN DV' : 'Lọc BN dịch vụ'}
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}
@@ -810,6 +854,27 @@ const App: React.FC = () => {
 
                                 {currentView === AppView.SURGERY_SCHEDULE && (
                                      <div className="space-y-4">
+                                        <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-4 flex flex-col gap-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="bg-blue-100 text-blue-600 p-2 rounded-xl"><UploadCloud size={20} /></div>
+                                                <div>
+                                                    <p className="font-bold text-slate-800">Đẩy lịch lên duyệt BV</p>
+                                                    <p className="text-xs text-gray-500">Mặc định tự chạy 20h mỗi ngày, có thể bấm tay khi cần.</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                <button 
+                                                    onClick={handleTriggerHospitalSync}
+                                                    disabled={isHospitalSyncing || !hospitalSyncUrl}
+                                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-white shadow-lg transition-all ${isHospitalSyncing || !hospitalSyncUrl ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                                >
+                                                    {isHospitalSyncing ? 'Đang gửi...' : 'Đồng bộ lên BV'}
+                                                </button>
+                                                {!hospitalSyncUrl && (
+                                                    <span className="text-xs text-red-500 font-semibold text-center sm:text-left">Chưa cấu hình URL Web App đồng bộ BV.</span>
+                                                )}
+                                            </div>
+                                        </div>
                                         <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
                                             <button onClick={() => setSurgeryTab('WAITING')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${surgeryTab === 'WAITING' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Chờ xếp lịch ({unscheduledPatients.length})</button>
                                             <button onClick={() => setSurgeryTab('SCHEDULED')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${surgeryTab === 'SCHEDULED' ? 'bg-white shadow text-orange-600' : 'text-gray-500'}`}>Đã lên lịch ({surgeryGroups.today.length + surgeryGroups.tomorrow.length + surgeryGroups.upcoming.length})</button>
@@ -835,9 +900,34 @@ const App: React.FC = () => {
 
                                                 <div className="pt-4 space-y-3">
                                                     {unscheduledPatients.map(p => (
-                                                        <div key={p.id} className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex items-center justify-between">
-                                                            <div><div className="font-bold text-slate-800">{p.fullName}</div><div className="text-xs text-gray-500">{p.diagnosis}</div></div>
-                                                            <button onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95">Xếp lịch</button>
+                                                        <div key={p.id} className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex items-center justify-between gap-3">
+                                                            <div>
+                                                                <div className="font-bold text-slate-800">{p.fullName}</div>
+                                                                <div className="text-xs text-gray-500">{p.diagnosis}</div>
+                                                                {isServicePatientToday(p) && (
+                                                                    <span className="inline-flex items-center text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 mt-1">
+                                                                        Phòng dịch vụ hôm nay
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                                <button
+                                                                    onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }}
+                                                                    className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md active:scale-95"
+                                                                >
+                                                                    Xếp lịch
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (window.confirm('Hủy đưa bệnh nhân này vào danh sách chờ mổ?')) {
+                                                                            handleCancelSurgery(p.id);
+                                                                        }
+                                                                    }}
+                                                                    className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200 hover:bg-gray-200 active:scale-95"
+                                                                >
+                                                                    Hủy đăng ký
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     ))}
                                                     {unscheduledPatients.length === 0 && <div className="text-center text-gray-400 py-8">Không có bệnh nhân chờ.</div>}
@@ -862,8 +952,34 @@ const App: React.FC = () => {
                                                                     {list.map(p => (
                                                                          <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-gray-100 relative">
                                                                              <div className="flex flex-col items-center justify-center w-14 border-r border-gray-100 pr-3"><span className="text-xl font-bold text-orange-500">{formatSurgeryTime(p.surgeryTime) || '--:--'}</span></div>
-                                                                             <div className="flex-1"><div className="font-bold text-slate-800">{p.fullName}</div><div className="text-sm text-gray-600">{p.surgeryMethod}</div>{p.surgeonName && <div className="text-xs text-indigo-600 font-bold mt-1">BS: {p.surgeonName}</div>}</div>
-                                                                             <button onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} className="absolute bottom-3 right-3 text-sm px-3 py-2 rounded-lg font-bold bg-gray-100 text-gray-500 hover:bg-orange-200 hover:text-orange-600 active:scale-95 transition-all shadow-sm">Sửa</button>
+                                                                             <div className="flex-1">
+                                                                                <div className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
+                                                                                    {p.fullName}
+                                                                                    {isServicePatientToday(p) && (
+                                                                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">DV hôm nay</span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="text-sm text-gray-600">{p.surgeryMethod}</div>
+                                                                                {p.surgeonName && <div className="text-xs text-indigo-600 font-bold mt-1">BS: {p.surgeonName}</div>}
+                                                                             </div>
+                                                                             <div className="absolute bottom-3 right-3 flex gap-2">
+                                                                                 <button
+                                                                                     onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }}
+                                                                                     className="text-sm px-3 py-2 rounded-lg font-bold bg-gray-100 text-gray-500 hover:bg-orange-200 hover:text-orange-600 active:scale-95 transition-all shadow-sm"
+                                                                                 >
+                                                                                     Sửa
+                                                                                 </button>
+                                                                                 <button
+                                                                                     onClick={() => {
+                                                                                         if (window.confirm('Hủy ca mổ đã xếp cho bệnh nhân này? Ca sẽ được đưa ra khỏi danh sách lịch mổ.')) {
+                                                                                             handleCancelSurgery(p.id);
+                                                                                         }
+                                                                                     }}
+                                                                                     className="text-sm px-3 py-2 rounded-lg font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 active:scale-95 transition-all"
+                                                                                 >
+                                                                                     Hủy ca
+                                                                                 </button>
+                                                                             </div>
                                                                          </div>
                                                                     ))}
                                                                 </div>

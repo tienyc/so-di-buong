@@ -64,7 +64,8 @@ export const getDefaultSettings = (): SettingsPayload => ({
     wards: [],
     // PHẦN BỔ SUNG QUAN TRỌNG:
     sheetUrl: '',
-    surgerySheetUrl: '', 
+    surgerySheetUrl: '',
+    hospitalSyncUrl: '',
 });
 
 export async function fetchSettings(): Promise<SettingsPayload> {
@@ -83,6 +84,7 @@ export async function fetchSettings(): Promise<SettingsPayload> {
             // ✅ BỔ SUNG: Đảm bảo fetch các trường URL từ Firestore
             sheetUrl: data.sheetUrl || '',
             surgerySheetUrl: data.surgerySheetUrl || '',
+            hospitalSyncUrl: data.hospitalSyncUrl || '',
         } as SettingsPayload;
     } else {
         console.warn("Settings document not found, returning default empty settings.");

@@ -48,7 +48,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
                     surgeryRequirements: data.surgeryRequirements || [],
                     // ✅ LƯU Ý: Phải đảm bảo data trả về có các trường này để tránh lỗi
                     sheetUrl: data.sheetUrl || '', 
-                    surgerySheetUrl: data.surgerySheetUrl || '', 
+                    surgerySheetUrl: data.surgerySheetUrl || '',
+                    hospitalSyncUrl: data.hospitalSyncUrl || '',
                 });
             } catch (err) {
                 console.error("Lỗi tải cài đặt:", err);
@@ -285,6 +286,21 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
                         className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
                         placeholder="Dán URL Lịch Mổ Khoa tại đây..."
                     />
+                </div>
+
+                {/* 0.3. Link Web App Đồng bộ BV */}
+                <div>
+                    <label className="block text-xs font-bold text-gray-600 uppercase mb-1">
+                        Link Web App Đồng bộ lên BV <span className="text-blue-600 font-extrabold">(Trigger duyệt mổ)</span>
+                    </label>
+                    <input
+                        type="url"
+                        value={settings.hospitalSyncUrl || ''}
+                        onChange={(e) => updateField('hospitalSyncUrl' as keyof SettingsPayload, e.target.value)}
+                        className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="URL Apps Script gửi dữ liệu sang BV"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Dùng chung URL này cho nút "Đồng bộ lên BV" trong app và trigger tự động 20h.</p>
                 </div>
             </div>
 

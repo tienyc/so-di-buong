@@ -236,6 +236,9 @@ export interface SettingsPayload {
     anesthesiaMethods: string[];
     surgeryClassifications: string[];
     surgeryRequirements: string[];
+    sheetUrl?: string;
+    surgerySheetUrl?: string;
+    hospitalSyncUrl?: string;
 }
 
 export interface RawWardConfig {

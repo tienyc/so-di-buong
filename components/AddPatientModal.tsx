@@ -44,8 +44,9 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
     const availableRooms = useMemo(() => {
         const block = rooms.find(r => r.id === manualForm.selectedBlockId);
         if (!block) return [];
-        const existingRooms = Array.from(new Set(block.patients.map(p => p.roomNumber))).sort();
-        return existingRooms;
+        const defined = block.definedRooms || [];
+        const existingRooms = block.patients.map(p => p.roomNumber).filter(Boolean);
+        return Array.from(new Set([...defined, ...existingRooms])).sort();
     }, [manualForm.selectedBlockId, rooms]);
 
     if (!isOpen) return null;

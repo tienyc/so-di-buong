@@ -223,3 +223,54 @@ export const testSurgerySheetConnection = async (surgerySheetUrl: string): Promi
     };
   }
 };
+
+/**
+ * Trigger hospital approval sheet sync from client button
+ */
+export const triggerHospitalSync = async (hospitalSyncUrl: string): Promise<{ success: boolean; message?: string; error?: string }> => {
+  if (!hospitalSyncUrl) {
+    return {
+      success: false,
+      error: 'Chưa cấu hình URL đồng bộ BV'
+    };
+  }
+
+  try {
+    const response = await fetch(hospitalSyncUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+      body: JSON.stringify({
+        action: 'TRIGGER_SYNC',
+        triggerSync: true,
+        secret: API_SECRET,
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+
+    if (result.success) {
+      return {
+        success: true,
+        message: result.message || 'Đã gửi yêu cầu đồng bộ lên BV'
+      };
+    }
+
+    return {
+      success: false,
+      error: result.error || 'Không nhận được kết quả từ Apps Script'
+    };
+
+  } catch (error) {
+    console.error('Error triggering hospital sync:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Không thể kết nối Web App đồng bộ BV'
+    };
+  }
+};
