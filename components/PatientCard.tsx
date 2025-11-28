@@ -240,16 +240,27 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
     const roomTag = getRoomTag();
 
     const getCardStyle = () => {
-        if (patient.status === PatientStatus.DISCHARGED) return 'bg-slate-50 border-l-[3px] border-l-slate-400 opacity-60 shadow-sm';
-        if (isSevere) return 'bg-white border-l-[3px] border-l-red-500 [box-shadow:0_0_8px_rgba(239,68,68,0.4),0_1px_3px_0_rgba(0,0,0,0.1)]';
-        if (isNew) return 'bg-white border-l-[3px] border-l-emerald-500 shadow-sm';
-        return 'bg-white border-l-[3px] border-l-blue-500 shadow-sm';
+        if (patient.status === PatientStatus.DISCHARGED) return 'bg-slate-50 opacity-60 shadow-sm';
+        if (isSevere) return 'bg-white [box-shadow:0_0_8px_rgba(239,68,68,0.4),0_1px_3px_0_rgba(0,0,0,0.1)]';
+        if (isNew) return 'bg-white shadow-sm';
+        return 'bg-white shadow-sm';
+    };
+
+    const getStatusLineClass = () => {
+        if (patient.status === PatientStatus.DISCHARGED) return 'bg-slate-300';
+        if (isSevere) return 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.35)]';
+        if (isNew) return 'bg-emerald-500';
+        return 'bg-blue-500';
     };
 
     return (
         <div className={`relative rounded-2xl mb-3 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${getCardStyle()}`}>
+            <span
+                className={`absolute left-2 top-2 bottom-2 w-1.5 rounded-full ${getStatusLineClass()}`}
+                aria-hidden="true"
+            />
             
-            <div className="p-3 flex items-start gap-3 cursor-pointer" onClick={() => !showMenu && setExpanded(!expanded)}>
+            <div className="p-3 pl-8 flex items-start gap-3 cursor-pointer" onClick={() => !showMenu && setExpanded(!expanded)}>
                 <div className="flex flex-col items-center gap-2 pt-0.5 w-5 shrink-0">
                     {isSevere && (
                          <div className="text-red-500 animate-pulse drop-shadow-sm" title="Bệnh nặng">

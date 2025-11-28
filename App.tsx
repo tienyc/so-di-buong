@@ -854,45 +854,24 @@ const App: React.FC = () => {
 
                                 {currentView === AppView.SURGERY_SCHEDULE && (
                                      <div className="space-y-4">
-                                        <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-4 flex flex-col gap-3">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-blue-100 text-blue-600 p-2 rounded-xl"><UploadCloud size={20} /></div>
-                                                <div>
-                                                    <p className="font-bold text-slate-800">Đẩy lịch lên duyệt BV</p>
-                                                    <p className="text-xs text-gray-500">Mặc định tự chạy 20h mỗi ngày, có thể bấm tay khi cần.</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-col sm:flex-row gap-2">
-                                                <button 
-                                                    onClick={handleTriggerHospitalSync}
-                                                    disabled={isHospitalSyncing || !hospitalSyncUrl}
-                                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-white shadow-lg transition-all ${isHospitalSyncing || !hospitalSyncUrl ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-                                                >
-                                                    {isHospitalSyncing ? 'Đang gửi...' : 'Đồng bộ lên BV'}
-                                                </button>
-                                                {!hospitalSyncUrl && (
-                                                    <span className="text-xs text-red-500 font-semibold text-center sm:text-left">Chưa cấu hình URL Web App đồng bộ BV.</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
-                                            <button onClick={() => setSurgeryTab('WAITING')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${surgeryTab === 'WAITING' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Chờ xếp lịch ({unscheduledPatients.length})</button>
-                                            <button onClick={() => setSurgeryTab('SCHEDULED')} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${surgeryTab === 'SCHEDULED' ? 'bg-white shadow text-orange-600' : 'text-gray-500'}`}>Đã lên lịch ({surgeryGroups.today.length + surgeryGroups.tomorrow.length + surgeryGroups.upcoming.length})</button>
+                                        <div className="flex gap-2 p-1 bg-white rounded-2xl border border-blue-100 shadow-inner">
+                                            <button onClick={() => setSurgeryTab('WAITING')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${surgeryTab === 'WAITING' ? 'bg-blue-500 text-white shadow-lg' : 'text-gray-500 hover:text-blue-600'}`}>Chờ xếp lịch ({unscheduledPatients.length})</button>
+                                            <button onClick={() => setSurgeryTab('SCHEDULED')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${surgeryTab === 'SCHEDULED' ? 'bg-orange-500 text-white shadow-lg' : 'text-gray-500 hover:text-orange-600'}`}>Đã lên lịch ({surgeryGroups.today.length + surgeryGroups.tomorrow.length + surgeryGroups.upcoming.length})</button>
                                         </div>
                                         {surgeryTab === 'WAITING' && (
                                              <div className="space-y-3">
-                                                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                                                     <button 
                                                         onClick={handleOpenSurgeryScheduler}
                                                         disabled={isScheduling || unscheduledPatients.length === 0}
-                                                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-indigo-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="w-full flex items-center justify-center gap-2 bg-white border border-blue-200 text-blue-600 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         <Wand2 size={18} />
                                                         {isScheduling ? 'AI đang phân tích...' : 'Xếp lịch nhanh với AI'}
                                                     </button>
                                                     <button 
                                                         onClick={handleScanServicePatients}
-                                                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-cyan-500/30 transition-all duration-300"
+                                                        className="w-full flex items-center justify-center gap-2 bg-white border border-emerald-200 text-emerald-600 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-emerald-50"
                                                     >
                                                         Quét BN Dịch Vụ
                                                     </button>
@@ -949,9 +928,15 @@ const App: React.FC = () => {
                                                             </div>
                                                             {isOpen && list.length > 0 && (
                                                                 <div className="p-3 space-y-3">
-                                                                    {list.map(p => (
+                                                                    {list.map(p => {
+                                                                         const timeLabel = formatSurgeryTime(p.surgeryTime) || '--:--';
+                                                                         const hour = p.surgeryTime && p.surgeryTime.includes(':') ? parseInt(p.surgeryTime.split(':')[0], 10) : null;
+                                                                         const isAfternoon = hour !== null && hour >= 12;
+                                                                         return (
                                                                          <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-gray-100 relative">
-                                                                             <div className="flex flex-col items-center justify-center w-14 border-r border-gray-100 pr-3"><span className="text-xl font-bold text-orange-500">{formatSurgeryTime(p.surgeryTime) || '--:--'}</span></div>
+                                                                             <div className="flex flex-col items-center justify-center w-14 border-r border-gray-100 pr-3">
+                                                                                <span className={`text-xl font-bold ${isAfternoon ? 'text-blue-500' : 'text-orange-500'}`}>{timeLabel}</span>
+                                                                             </div>
                                                                              <div className="flex-1">
                                                                                 <div className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
                                                                                     {p.fullName}
@@ -977,11 +962,11 @@ const App: React.FC = () => {
                                                                                      }}
                                                                                      className="text-sm px-3 py-2 rounded-lg font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 active:scale-95 transition-all"
                                                                                  >
-                                                                                     Hủy ca
-                                                                                 </button>
-                                                                             </div>
-                                                                         </div>
-                                                                    ))}
+                                                                                    Hủy ca
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    ); })}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -989,6 +974,27 @@ const App: React.FC = () => {
                                                 })}
                                             </div>
                                         )}
+                                        <div className="bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-3 flex flex-col gap-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="bg-blue-100 text-blue-600 p-2 rounded-xl"><UploadCloud size={18} /></div>
+                                                <div>
+                                                    <p className="font-semibold text-slate-800 text-sm">Đẩy lịch lên duyệt BV</p>
+                                                    <p className="text-[11px] text-gray-500">Chạy tự động lúc 20h mỗi ngày, có thể bấm tay khi cần.</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col sm:flex-row gap-2">
+                                                <button 
+                                                    onClick={handleTriggerHospitalSync}
+                                                    disabled={isHospitalSyncing || !hospitalSyncUrl}
+                                                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-sm font-bold transition-all border ${isHospitalSyncing || !hospitalSyncUrl ? 'bg-gray-200 text-gray-500 border-gray-300' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}
+                                                >
+                                                    {isHospitalSyncing ? 'Đang gửi...' : 'Đồng bộ lên BV'}
+                                                </button>
+                                                {!hospitalSyncUrl && (
+                                                    <span className="text-xs text-red-500 font-semibold text-center sm:text-left">Chưa cấu hình URL Web App đồng bộ BV.</span>
+                                                )}
+                                            </div>
+                                        </div>
                                      </div>
                                 )}
 

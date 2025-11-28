@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { RoomBlock, PatientStatus } from '../types';
-import { Users, Activity, Calendar, AlertTriangle, PieChart } from 'lucide-react';
+import { Users, Activity, AlertTriangle, PieChart } from 'lucide-react';
 
 interface StatisticsViewProps {
     rooms: RoomBlock[];
@@ -16,28 +16,14 @@ const StatisticsView: React.FC<StatisticsViewProps> = ({ rooms }) => {
         const totalSurgery = allPatients.filter(p => p.isScheduledForSurgery).length;
         const totalSevere = allPatients.filter(p => p.isSevere).length;
 
-        // Calculate Average Length of Stay
-        let totalDays = 0;
-        const now = new Date();
-        allPatients.forEach(p => {
-            const adm = new Date(p.admissionDate);
-            // Normalize to midnight
-            adm.setHours(0,0,0,0);
-            const nowMidnight = new Date();
-            nowMidnight.setHours(0,0,0,0);
-            
-            const diff = Math.floor((nowMidnight.getTime() - adm.getTime()) / (1000 * 3600 * 24)) + 1;
-            totalDays += (diff < 0 ? 0 : diff);
-        });
-        const avgStay = totalPatients > 0 ? (totalDays / totalPatients).toFixed(1) : 0;
-
         // Long Stay Patients (> 7 days)
         const longStayPatients = allPatients.filter(p => {
-            const adm = new Date(p.admissionDate);
-            adm.setHours(0,0,0,0);
+            const admRaw = p.admissionDate ? new Date(p.admissionDate) : null;
+            if (!admRaw || Number.isNaN(admRaw.getTime())) return false;
+            admRaw.setHours(0,0,0,0);
             const nowMidnight = new Date();
             nowMidnight.setHours(0,0,0,0);
-            const diff = Math.floor((nowMidnight.getTime() - adm.getTime()) / (1000 * 3600 * 24)) + 1;
+            const diff = Math.floor((nowMidnight.getTime() - admRaw.getTime()) / (1000 * 3600 * 24)) + 1;
             return diff > 7;
         }).sort((a, b) => new Date(a.admissionDate).getTime() - new Date(b.admissionDate).getTime());
 
@@ -51,7 +37,6 @@ const StatisticsView: React.FC<StatisticsViewProps> = ({ rooms }) => {
             totalPatients,
             totalSurgery,
             totalSevere,
-            avgStay,
             longStayPatients,
             blockCounts
         };
@@ -93,14 +78,6 @@ const StatisticsView: React.FC<StatisticsViewProps> = ({ rooms }) => {
                     </div>
                     <div className="text-3xl font-bold text-slate-800">{stats.totalSurgery}</div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Ca Mổ / Chờ Mổ</div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-soft flex flex-col items-center justify-center text-center hover:scale-105 transition-transform">
-                    <div className="bg-purple-50 p-3 rounded-xl mb-3 text-purple-600 shadow-inner">
-                        <Calendar size={28} />
-                    </div>
-                    <div className="text-3xl font-bold text-slate-800">{stats.avgStay}</div>
-                    <div className="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Ngày ĐT Trung Bình</div>
                 </div>
 
                 <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-soft flex flex-col items-center justify-center text-center hover:scale-105 transition-transform">
