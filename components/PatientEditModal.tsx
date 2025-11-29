@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Patient } from '../types';
-import { X, Save, User, Activity, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Save, User, Activity, Clock, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 
 // --- HELPER FUNCTIONS ---
 
@@ -40,6 +40,7 @@ interface PatientEditModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (id: string, updates: Partial<Patient>) => void;
+    onDelete: (id: string) => Promise<void> | void;
     patient: Patient | null;
     // Config Lists (Cho phép undefined để tránh lỗi crash)
     doctors?: string[];
@@ -50,7 +51,7 @@ interface PatientEditModalProps {
 }
 
 const PatientEditModal: React.FC<PatientEditModalProps> = ({
-    isOpen, onClose, onSave, patient,
+    isOpen, onClose, onSave, onDelete, patient,
     doctors = [], operatingRooms = [], anesthesiaMethods = [], surgeryClassifications = [], surgeryRequirements = []
 }) => {
     const [formData, setFormData] = useState<Partial<Patient>>({});
@@ -130,6 +131,13 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
 
     const inputClass = "w-full bg-white border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-medical-500 outline-none text-slate-900 text-sm";
     const labelClass = "block text-[10px] font-bold text-gray-500 uppercase mb-1";
+
+    const handleDelete = async () => {
+        if (!patient) return;
+        const confirmed = window.confirm(`Xóa bệnh nhân "${patient.fullName}"?`);
+        if (!confirmed) return;
+        await onDelete(patient.id);
+    };
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
@@ -327,12 +335,21 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                     </div>
 
                     <div className="pt-2 sticky bottom-0 bg-white pb-2">
-                        <button 
-                            type="submit" 
-                            className="w-full bg-slate-800 text-white py-3 rounded-xl hover:bg-slate-900 flex items-center justify-center gap-2 font-bold shadow-lg shadow-slate-800/20 active:scale-95 transition-all"
-                        >
-                            <Save size={18} /> Lưu Thay Đổi
-                        </button>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                                type="button"
+                                onClick={handleDelete}
+                                className="w-full bg-red-50 text-red-600 py-3 rounded-xl border border-red-200 hover:bg-red-100 flex items-center justify-center gap-2 font-bold active:scale-95 transition-all shadow-sm"
+                            >
+                                <Trash2 size={18} /> Xóa bệnh nhân
+                            </button>
+                            <button 
+                                type="submit" 
+                                className="w-full bg-slate-800 text-white py-3 rounded-xl hover:bg-slate-900 flex items-center justify-center gap-2 font-bold shadow-lg shadow-slate-800/20 active:scale-95 transition-all"
+                            >
+                                <Save size={18} /> Lưu Thay Đổi
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>

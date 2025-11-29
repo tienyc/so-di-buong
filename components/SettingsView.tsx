@@ -13,9 +13,10 @@ interface WardConfig {
 
 interface SettingsViewProps {
     onSettingsSaved?: () => void;
+    onCleanupDischarged?: () => Promise<void>;
 }
 
-const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
+const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onCleanupDischarged }) => {
     // State lưu toàn bộ cài đặt
     const [settings, setSettings] = useState<SettingsPayload>(getDefaultSettings());
     const [isLoading, setIsLoading] = useState(true);
@@ -27,6 +28,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
     const [newBlockName, setNewBlockName] = useState('');
     const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
     const [newRoomNumber, setNewRoomNumber] = useState('');
+    const [isCleaning, setIsCleaning] = useState(false);
+    const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+    const [cleanupError, setCleanupError] = useState<string | null>(null);
     
     // State quản lý input cho các mục cấu hình danh sách (generic)
     const [configInputs, setConfigInputs] = useState<{[key: string]: string}>({});
@@ -139,6 +143,24 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
             return w;
         });
         updateField('wards', nextWards);
+    };
+
+    const handleCleanupDischargedPatients = async () => {
+        if (!onCleanupDischarged) return;
+        if (!window.confirm('Xóa các bệnh nhân đã ra viện hơn 7 ngày? Dữ liệu này sẽ không thể khôi phục.')) {
+            return;
+        }
+        try {
+            setIsCleaning(true);
+            setCleanupError(null);
+            const message = await onCleanupDischarged();
+            setCleanupMessage(message);
+        } catch (error) {
+            console.error('Cleanup error:', error);
+            setCleanupError('Có lỗi khi xóa bệnh nhân đã ra viện.');
+        } finally {
+            setIsCleaning(false);
+        }
     };
 
     // --- 5. Logic xử lý các danh sách cấu hình khác (Generic) ---
@@ -423,6 +445,43 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
                 {renderConfigSection('surgeryClassifications', "Phân loại Phẫu thuật", <Activity size={20} className="text-purple-600"/>, "VD: Loại I...", "bg-purple-100 text-purple-700")}
                 {renderConfigSection('surgeryRequirements', "Yêu cầu Dụng cụ", <List size={20} className="text-emerald-600"/>, "VD: C-Arm...", "bg-emerald-100 text-emerald-700")}
             </div>
+
+            {/* 4. Dọn dữ liệu bệnh nhân ra viện */}
+            {onCleanupDischarged && (
+                <>
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider pl-2 mb-3 mt-8">Dọn dữ liệu</h3>
+                    <div className="bg-red-50/70 border border-red-200 rounded-2xl p-4 flex flex-col gap-3 shadow-sm">
+                        <div className="flex items-start gap-3">
+                            <div className="bg-white text-red-500 p-2 rounded-xl border border-red-100 shadow-sm">
+                                <Trash2 size={20}/>
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-red-600 text-base">Xóa bệnh nhân đã ra viện</h4>
+                                <p className="text-sm text-red-500 leading-relaxed">Tính năng này sẽ xóa các bệnh nhân đã ra viện và được xác nhận hơn 7 ngày. Dữ liệu không thể khôi phục nên hãy chắc chắn trước khi thực hiện.</p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleCleanupDischargedPatients}
+                            disabled={isCleaning}
+                            className="flex items-center justify-center gap-2 w-full bg-red-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-500/30 hover:bg-red-700 active:scale-95 transition-all disabled:opacity-70"
+                        >
+                            {isCleaning ? <RefreshCw size={18} className="animate-spin"/> : <Trash2 size={18} />}
+                            {isCleaning ? 'Đang xóa dữ liệu...' : 'Xóa BN ra viện > 7 ngày'}
+                        </button>
+                        {cleanupMessage && (
+                            <div className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl p-2 flex items-center gap-2">
+                                ✓ {cleanupMessage}
+                            </div>
+                        )}
+                        {cleanupError && (
+                            <div className="text-sm text-red-600 bg-red-100 border border-red-200 rounded-xl p-2">
+                                {cleanupError}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     );
 };

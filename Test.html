@@ -3,250 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Header Final - Ngoại CT Bỏng</title>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-
+    <title>Sổ Đi Buồng Thông Minh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
-        :root {
-            --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-            --primary-shadow: rgba(37, 99, 235, 0.3);
-            --bg-gray: #f8fafc;
-            --border-color: #e2e8f0;
-            --text-color: #475569;
-            --hover-bg: #fff;
-            --hover-text: #0f172a;
-        }
-
-        body {
-            font-family: 'Plus Jakarta Sans', sans-serif;
-            background-color: #eef2f6;
-            margin: 0;
-            padding: 40px 20px;
-            display: flex;
-            justify-content: center;
-        }
-
-        /* Khung giả lập App */
-        .app-container {
-            width: 100%;
-            max-width: 900px;
-            background: #fff;
-            border-radius: 20px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0,0,0,0.02);
-            overflow: hidden;
-        }
-
-        /* --- HEADER CHÍNH --- */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 24px;
-            background: #fff;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        /* Logo & Tiêu đề */
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
+        body { font-family: 'Inter', sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        .logo-box {
-            width: 42px;
-            height: 42px;
-            background: #eff6ff; /* Xanh rất nhạt */
-            color: #2563eb;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 22px;
+        /* Class để ẩn Header khi cuộn xuống */
+        .header-hidden {
+            transform: translateY(-100%);
         }
-
-        .title-box h1 {
-            font-size: 16px;
-            margin: 0;
-            font-weight: 700;
-            color: #1e293b;
-        }
-        
-        /* Badge số lượng bệnh nhân giả lập */
-        .patient-count {
-            font-size: 12px;
-            color: #64748b;
-            background: #f1f5f9;
-            padding: 2px 8px;
-            border-radius: 10px;
-            margin-top: 4px;
-            display: inline-block;
-            font-weight: 600;
-        }
-
-        /* --- THANH CÔNG CỤ (CAPSULE ACTION BAR) --- */
-        .action-capsule {
-            display: flex;
-            align-items: center;
-            background: var(--bg-gray);
-            border: 1px solid var(--border-color);
-            padding: 5px;
-            border-radius: 50px; /* Bo tròn dạng viên thuốc */
-            gap: 4px;
-        }
-
-        /* Style chung cho các nút icon tròn */
-        .btn-icon {
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            border: none;
-            background: transparent;
-            color: var(--text-color);
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s ease;
-            position: relative;
-        }
-
-        /* Hiệu ứng Hover cho nút icon */
-        .btn-icon:hover {
-            background: var(--hover-bg);
-            color: var(--primary-gradient); /* Icon đổi màu khi hover */
-            color: #2563eb;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            transform: translateY(-1px);
-        }
-
-        /* Tooltip đơn giản bằng CSS */
-        .btn-icon[data-title]:hover::after {
-            content: attr(data-title);
-            position: absolute;
-            bottom: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1e293b;
-            color: #fff;
-            font-size: 11px;
-            padding: 4px 8px;
-            border-radius: 6px;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 1;
-            z-index: 10;
-        }
-
-        /* Vạch ngăn cách dọc */
-        .divider {
-            width: 1px;
-            height: 20px;
-            background-color: #cbd5e1;
-            margin: 0 4px;
-        }
-
-        /* Nút Primary (Thêm mới) đặc biệt */
-        .btn-primary {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            height: 38px;
-            padding: 0 20px 0 16px; /* Padding bên phải rộng hơn chút cho cân */
-            background: var(--primary-gradient);
-            color: white;
-            border: none;
-            border-radius: 20px; /* Bo tròn dạng viên thuốc nhỏ */
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            box-shadow: 0 4px 10px var(--primary-shadow);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .btn-primary:hover {
-            box-shadow: 0 6px 15px rgba(37, 99, 235, 0.5);
-            transform: translateY(-1px);
-            filter: brightness(1.05);
-        }
-        
-        .btn-primary i {
-            font-size: 18px;
-        }
-
-        /* --- RESPONSIVE MOBILE --- */
-        /* Trên điện thoại nhỏ, ẩn chữ "Thêm mới", biến nút thành hình tròn */
-        @media (max-width: 600px) {
-            .btn-primary span {
-                display: none;
-            }
-            .btn-primary {
-                padding: 0;
-                width: 38px;
-                border-radius: 50%;
-                justify-content: center;
-            }
-            .title-box h1 {
-                display: none; /* Ẩn tên khoa nếu quá chật */
-            }
-            .logo-box {
-                margin-right: 0;
-            }
-            .header {
-                padding: 12px;
-            }
-        }
-
     </style>
 </head>
-<body>
+<body class="bg-gray-50 text-gray-800">
 
-    <div class="app-container">
-        <header class="header">
-            <div class="header-left">
-                <div class="logo-box">
-                    <i class="ph-duotone ph-hospital"></i>
+    <div class="max-w-md mx-auto bg-white min-h-screen relative shadow-2xl overflow-hidden">
+
+        <header id="main-header" class="fixed top-0 w-full max-w-md z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 pt-4 pb-2 px-4 shadow-sm transition-transform duration-300 ease-in-out">
+            <div class="flex justify-between items-center mb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shadow-sm">
+                        <i class="fa-solid fa-stethoscope text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold leading-tight text-slate-800">Ngoại CT - Bỏng</h1>
+                        <p class="text-xs text-gray-500 font-medium">Trực tuyến • <span class="text-green-500">Online</span></p>
+                    </div>
                 </div>
-                <div class="title-box">
-                    <h1>Ngoại CT - Bỏng</h1>
-                    <span class="patient-count">32 BN</span>
+                <div class="flex gap-2">
+                    <button class="w-9 h-9 rounded-full bg-gray-50 hover:bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-600 transition-colors">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </button>
+                    <button class="w-9 h-9 rounded-full bg-gray-50 hover:bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-600 relative transition-colors">
+                        <i class="fa-solid fa-filter"></i>
+                    </button>
                 </div>
             </div>
 
-            <div class="action-capsule">
-                
-                <button class="btn-icon" data-title="Chuyển giao diện">
-                    <i class="ph ph-table"></i> 
-                    </button>
-
-                <button class="btn-icon" data-title="Làm mới dữ liệu">
-                    <i class="ph ph-arrows-clockwise"></i>
-                </button>
-
-                <button class="btn-icon" data-title="Xuất báo cáo / In">
-                    <i class="ph ph-printer"></i>
-                </button>
-
-                <button class="btn-icon" data-title="Mở rộng chức năng">
-                    <i class="ph ph-list"></i>
-                </button>
-
-                <div class="divider"></div>
-
-                <button class="btn-primary">
-                    <i class="ph-bold ph-plus"></i>
-                    <span>Thêm Mới</span>
-                </button>
-
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                <button class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-full shadow-md shadow-blue-200 whitespace-nowrap">Tất cả</button>
+                <button class="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-full border border-gray-200 whitespace-nowrap">Phẫu thuật</button>
+                <button class="px-3 py-1.5 bg-white text-gray-600 text-xs font-medium rounded-full border border-gray-200 whitespace-nowrap">Hậu phẫu</button>
+                <button class="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-full border border-red-100 whitespace-nowrap">Cần chú ý</button>
             </div>
         </header>
 
-        <div style="background-color: #f8fafc; height: 300px; display: flex; align-items: center; justify-content: center; border-top: 1px dashed #e2e8f0;">
-            <p style="color: #94a3b8;">Nội dung danh sách bệnh nhân hiển thị tại đây...</p>
-        </div>
+        <main class="pt-32 p-4 space-y-4 pb-24 min-h-screen">
+            
+            <div>
+                <div class="flex justify-between items-center mb-2 px-1">
+                    <h2 class="text-sm font-bold text-blue-700 uppercase tracking-wide">Cấp Cứu 1</h2>
+                </div>
+
+                <div class="group bg-white rounded-xl p-3 shadow-sm border border-gray-100 relative overflow-hidden mb-3">
+                    <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-500 rounded-l-xl"></div>
+                    <div class="pl-3 flex justify-between items-start">
+                        <div class="flex-1">
+                            <h3 class="text-base font-bold text-gray-800">Nguyễn Văn A <span class="text-xs font-normal text-gray-500 bg-gray-100 px-1 rounded ml-1">45t</span></h3>
+                            <p class="text-sm text-gray-600 mb-1">Gãy xương đòn phải</p>
+                            <span class="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded">CC1</span>
+                        </div>
+                         <i class="fa-solid fa-ellipsis-vertical text-gray-300 p-1"></i>
+                    </div>
+                </div>
+
+                <div class="bg-red-50/50 rounded-xl p-3 shadow-sm border border-red-100 relative overflow-hidden mb-3">
+                    <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500 rounded-l-xl"></div>
+                    <div class="pl-3 flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-1 mb-1">
+                                <i class="fa-solid fa-triangle-exclamation text-red-500 text-xs"></i>
+                                <h3 class="text-base font-bold text-gray-900">Trần Văn B <span class="text-xs font-normal text-gray-500 bg-white border px-1 rounded ml-1">54t</span></h3>
+                            </div>
+                            <p class="text-sm text-gray-800 font-medium mb-1">Đa chấn thương</p>
+                            <span class="px-2 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded">Theo dõi</span>
+                        </div>
+                        <i class="fa-solid fa-ellipsis-vertical text-gray-400 p-1"></i>
+                    </div>
+                </div>
+
+                 <script>
+                    for(let i=0; i<10; i++) {
+                        document.write(`
+                        <div class="bg-white rounded-xl p-3 shadow-sm border border-gray-100 relative overflow-hidden mb-3">
+                            <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-gray-300 rounded-l-xl"></div>
+                            <div class="pl-3">
+                                <h3 class="text-base font-bold text-gray-800">Bệnh nhân Demo ${i+1}</h3>
+                                <p class="text-sm text-gray-600">Chẩn đoán mẫu...</p>
+                            </div>
+                        </div>
+                        `);
+                    }
+                 </script>
+            </div>
+        </main>
+
+        <button class="fixed bottom-24 right-5 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg shadow-blue-600/40 flex items-center justify-center text-2xl hover:bg-blue-700 transition-transform active:scale-95 z-40">
+            <i class="fa-solid fa-plus"></i>
+        </button>
+
+        <nav class="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 px-6 py-3 flex justify-between items-end z-50 text-xs font-medium pb-safe">
+            <a href="#" class="flex flex-col items-center gap-1 text-blue-600 w-16">
+                <i class="fa-solid fa-bed-pulse text-xl"></i>
+                <span>Đi buồng</span>
+            </a>
+            <a href="#" class="flex flex-col items-center gap-1 text-gray-400 w-16">
+                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+                <span>Nặng</span>
+            </a>
+            <a href="#" class="flex flex-col items-center gap-1 text-gray-400 w-16">
+                <i class="fa-regular fa-calendar-check text-xl"></i>
+                <span>Lịch mổ</span>
+            </a>
+            <a href="#" class="flex flex-col items-center gap-1 text-gray-400 w-16">
+                <i class="fa-solid fa-user-check text-xl"></i>
+                <span>Ra viện</span>
+            </a>
+        </nav>
+
     </div>
+
+    <script>
+        let lastScrollTop = 0;
+        const header = document.getElementById('main-header');
+        
+        window.addEventListener('scroll', function() {
+            let scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            
+            // Xử lý hiệu ứng nảy (rubber banding) trên iOS
+            if (scrollTop < 0) return; 
+
+            // Logic chính
+            if (scrollTop > lastScrollTop && scrollTop > 50) {
+                // ĐANG CUỘN XUỐNG & đã qua top 50px -> Ẩn Header
+                header.classList.add('header-hidden');
+            } else {
+                // ĐANG CUỘN LÊN -> Hiện Header
+                header.classList.remove('header-hidden');
+            }
+            
+            lastScrollTop = scrollTop;
+        });
+    </script>
 
 </body>
 </html>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, OrderType } from './types'; 
-import { fetchAllData, savePatient, saveOrder, confirmDischarge, fetchSettings } from './services/api';
+import { fetchAllData, savePatient, saveOrder, confirmDischarge, fetchSettings, deletePatient } from './services/api';
 import { generateSurgerySchedule } from './services/geminiService';
 import { buildRoomBlocksFromConfig, WardConfig } from './services/sheetMapping';
 import { syncSurgeryToKhoa, triggerHospitalSync } from './services/surgerySync';
@@ -338,6 +338,67 @@ const App: React.FC = () => {
         } catch (error) {
             console.error('Error adding order:', error);
             setNotification({ message: 'Lỗi thêm y lệnh', type: 'error' });
+        }
+    };
+
+    const handleDeletePatientRecord = async (id: string) => {
+        try {
+            await deletePatient(id);
+            setRooms(prev => prev.map(block => ({
+                ...block,
+                patients: block.patients.filter(p => p.id !== id)
+            })));
+            setSelectedPatientId(null);
+            setIsEditModalOpen(false);
+            setNotification({ message: 'Đã xóa bệnh nhân khỏi danh sách.', type: 'success' });
+        } catch (error) {
+            console.error('Lỗi xoá bệnh nhân:', error);
+            setNotification({ message: 'Không thể xóa bệnh nhân. Vui lòng thử lại.', type: 'error' });
+        }
+    };
+
+    const handleCleanupDischargedPatients = async (): Promise<string> => {
+        const retentionDays = 7;
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - retentionDays);
+
+        const toDelete = rooms
+            .flatMap(block => block.patients)
+            .filter(patient => {
+                if (!patient.dischargeConfirmed || !patient.dischargeDate) return false;
+                const date = new Date(patient.dischargeDate);
+                return !isNaN(date.getTime()) && date < cutoff;
+            });
+
+        if (toDelete.length === 0) {
+            const msg = 'Không có bệnh nhân ra viện quá 7 ngày.';
+            setNotification({ message: msg, type: 'success' });
+            return msg;
+        }
+
+        try {
+            for (const patient of toDelete) {
+                await deletePatient(patient.id);
+            }
+
+            const removedIds = new Set(toDelete.map(p => p.id));
+            setRooms(prev => prev.map(block => ({
+                ...block,
+                patients: block.patients.filter(p => !removedIds.has(p.id))
+            })));
+
+            if (selectedPatientId && removedIds.has(selectedPatientId)) {
+                setSelectedPatientId(null);
+                setIsEditModalOpen(false);
+            }
+
+            const msg = `Đã xóa ${toDelete.length} bệnh nhân ra viện > ${retentionDays} ngày.`;
+            setNotification({ message: msg, type: 'success' });
+            return msg;
+        } catch (error) {
+            console.error('Lỗi dọn bệnh nhân ra viện:', error);
+            setNotification({ message: 'Không thể xóa dữ liệu cũ. Vui lòng thử lại.', type: 'error' });
+            throw error;
         }
     };
 
@@ -903,7 +964,14 @@ const App: React.FC = () => {
             {/* Main Content */}
             <main className="flex-1 px-4 pt-4 pb-28 overflow-y-auto max-w-2xl mx-auto w-full">
                 
-                {currentView === AppView.SETTINGS && <SettingsView onSettingsSaved={loadDataFromSheet} />}
+                {currentView === AppView.SETTINGS && (
+                    <SettingsView 
+                        onSettingsSaved={loadDataFromSheet} 
+                        onCleanupDischarged={async () => {
+                            await handleCleanupDischargedPatients();
+                        }}
+                    />
+                )}
                 {currentView === AppView.STATISTICS && <StatisticsView rooms={rooms} />}
 
                 {/* --- LOGIC HIỂN THỊ CHÍNH --- */}
@@ -1226,7 +1294,18 @@ const App: React.FC = () => {
             <AddPatientModal isOpen={isAddPatientModalOpen} onClose={() => setIsAddPatientModalOpen(false)} doctors={doctors} onAddPatients={handleAddPatients} rooms={rooms} />
             <OrderModal isOpen={isOrderModalOpen} onClose={() => setIsOrderModalOpen(false)} onAddOrder={handleAddOrder} patientName={selectedPatientName} doctors={doctors} />
             <TransferModal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} mode={transferMode} patientName={selectedPatientName} rooms={rooms} currentRoomId={selectedRoomBlockId} onConfirm={handleTransferConfirm} />
-            <PatientEditModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} patient={selectedPatient} onSave={handleUpdatePatient} doctors={doctors} operatingRooms={operatingRooms} anesthesiaMethods={anesthesiaMethods} surgeryClassifications={surgeryClassifications} surgeryRequirements={surgeryRequirements} />
+            <PatientEditModal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                patient={selectedPatient}
+                onSave={handleUpdatePatient}
+                onDelete={handleDeletePatientRecord}
+                doctors={doctors}
+                operatingRooms={operatingRooms}
+                anesthesiaMethods={anesthesiaMethods}
+                surgeryClassifications={surgeryClassifications}
+                surgeryRequirements={surgeryRequirements}
+            />
             <SurgerySchedulerModal 
                 isOpen={isSurgerySchedulerModalOpen}
                 onClose={() => setIsSurgerySchedulerModalOpen(false)}
