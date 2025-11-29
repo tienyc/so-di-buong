@@ -134,7 +134,6 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         const surgeryDateSafe = safeString(patient.surgeryDate);
         const dischargeDateSafe = safeString(patient.dischargeDate);
 
-        // Chỉ split nếu chuỗi có chứa 'T' hoặc '-'
         const sDate = surgeryDateSafe.includes('T') ? surgeryDateSafe.split('T')[0] : surgeryDateSafe;
         const dDate = dischargeDateSafe.includes('T') ? dischargeDateSafe.split('T')[0] : dischargeDateSafe;
 
@@ -408,7 +407,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                         <div className="p-1.5 rounded-full bg-white border border-gray-200 shadow-sm group-hover:border-medical-200 transition-colors">
                              {showDetails ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </div>
-                        <span className="font-bold text-xs uppercase tracking-wider">Thông tin chi tiết bệnh án</span>
+                        <span className="font-bold text-[10px] uppercase tracking-wider text-slate-500">Thông tin chi tiết bệnh án</span>
                     </div>
 
                     {showDetails && (
@@ -468,12 +467,12 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                             {overdueOrders.length > 0 && (
                                 <div>
                                     <div className="flex items-center gap-2 mb-3">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]"></div>
-                                        <span className="text-xs font-bold text-red-600 uppercase tracking-wide">Quá hạn ({overdueOrders.length})</span>
+                                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]"></div>
+                                        <span className="text-[11px] font-bold text-red-600 uppercase tracking-wide">Quá hạn ({overdueOrders.length})</span>
                                     </div>
                                     <div className="space-y-2 pl-2 border-l-2 border-red-300 ml-1.5">
                                         {overdueOrders.map(order => (
-                                            <div key={order.id} className="bg-red-50 p-3 rounded-xl border border-red-200 text-sm shadow-sm flex items-start gap-2.5 group hover:border-red-300 transition-colors">
+                                            <div key={order.id} className="bg-red-50 p-2.5 rounded-xl border border-red-200 text-[13px] shadow-sm flex items-start gap-2 group hover:border-red-300 transition-colors">
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); onCompleteOrder && onCompleteOrder(patient.id, order.id); }}
                                                     className="mt-0.5 text-gray-300 hover:text-green-500 transition-colors shrink-0 p-1 hover:bg-green-50 rounded"
@@ -481,11 +480,11 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                                     <Square size={22} />
                                                 </button>
                                                 <div className="flex-1">
-                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                    <div className="flex items-center gap-1.5 mb-0.5">
                                                         <Clock size={12} className="text-red-500"/>
-                                                        <span className="font-bold text-red-600 text-xs bg-red-100 px-1.5 py-0.5 rounded">{formatDateVN(order.executionDate)}</span>
+                                                        <span className="font-bold text-red-600 text-[11px] bg-red-100 px-1.5 py-0.5 rounded">{formatDateVN(order.executionDate)}</span>
                                                     </div>
-                                                    <p className="text-slate-800 font-medium text-sm">{order.content}</p>
+                                                    <p className="text-slate-800 font-medium text-[13px] leading-snug">{order.content}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -495,15 +494,15 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
 
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
-                                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">Y lệnh hôm nay ({todayOrders.length})</span>
+                                    <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
+                                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Y lệnh hôm nay ({todayOrders.length})</span>
                                 </div>
                                 {todayOrders.length === 0 ? (
                                     <div className="text-xs text-slate-400 italic pl-6 py-2 bg-white rounded-xl border border-dashed border-gray-200">Chưa có y lệnh hôm nay.</div>
                                 ) : (
                                     <div className="space-y-2 pl-2 border-l-2 border-slate-200 ml-1.5">
                                         {(showAllOrders ? todayOrders : todayOrders.slice(0, 4)).map(order => (
-                                            <div key={order.id} className="bg-white p-3 rounded-xl border border-gray-100 text-sm shadow-sm flex items-start gap-2.5 group hover:border-green-200 transition-colors">
+                                            <div key={order.id} className="bg-white p-2.5 rounded-xl border border-gray-100 text-[13px] shadow-sm flex items-start gap-2 group hover:border-green-200 transition-colors">
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); onCompleteOrder && onCompleteOrder(patient.id, order.id); }}
                                                     className="mt-0.5 text-gray-300 hover:text-green-500 transition-colors shrink-0 p-1 hover:bg-green-50 rounded"
@@ -511,7 +510,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                                     <Square size={22} />
                                                 </button>
                                                 <div className="flex-1 pt-0.5">
-                                                    <p className="text-slate-800 font-medium text-sm leading-snug">{order.content}</p>
+                                                    <p className="text-slate-800 font-medium text-[13px] leading-snug">{order.content}</p>
                                                 </div>
                                             </div>
                                         ))}

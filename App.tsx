@@ -13,7 +13,7 @@ import SettingsView from './components/SettingsView';
 import StatisticsView from './components/StatisticsView';
 import PatientTableView from './components/PatientTableView';
 import SurgerySchedulerModal from './components/SurgerySchedulerModal';
-import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays, Wand2, UploadCloud } from 'lucide-react';
+import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays, Wand2, UploadCloud, FileText } from 'lucide-react';
 
 // --- HELPER FUNCTIONS ---
 const removeVietnameseTones = (str: string) => {
@@ -35,13 +35,42 @@ const removeVietnameseTones = (str: string) => {
     return str;
 }
 
+const getLocalIsoDate = (date: Date) => (
+    date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0')
+);
+const getTodayString = () => getLocalIsoDate(new Date());
+
+const escapeHtml = (text?: string) => {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+};
+
 const normalizeDateString = (dateStr?: string): string => {
     if (!dateStr || typeof dateStr !== 'string') return '';
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) {
-        return dateStr.split('T')[0];
+    const base = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(base)) return base;
+    const slashMatch = base.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if (slashMatch) {
+        const day = slashMatch[1].padStart(2, '0');
+        const month = slashMatch[2].padStart(2, '0');
+        let year = slashMatch[3];
+        if (!year) {
+        year = String(new Date().getFullYear());
+    } else if (year.length === 2) {
+        year = '20' + year;
     }
-    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    const parsed = new Date(base);
+    if (!isNaN(parsed.getTime())) {
+        return getLocalIsoDate(parsed);
+    }
+    return '';
 };
 
 const formatSurgeryTime = (timeStr?: string): string => {
@@ -108,6 +137,7 @@ const App: React.FC = () => {
     const [suggestedSchedule, setSuggestedSchedule] = useState<any[]>([]);
     const [isHospitalSyncing, setIsHospitalSyncing] = useState(false);
     const [showServiceOnly, setShowServiceOnly] = useState(false);
+    const [filtersVisible, setFiltersVisible] = useState(true);
 
     const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
     const [expandedBlocks, setExpandedBlocks] = useState<{[key: string]: boolean}>({});
@@ -179,7 +209,7 @@ const App: React.FC = () => {
 
     // --- DERIVED DATA & ACTION HANDLERS ---
     
-    const todayString = useMemo(() => new Date().toISOString().split('T')[0], []);
+    const todayString = useMemo(() => getTodayString(), []);
 
     const isServiceRoomName = useCallback((room?: string) => {
         if (!room) return false;
@@ -346,7 +376,7 @@ const App: React.FC = () => {
     const handleConfirmDischarge = async (id: string) => {
         if (window.confirm('Xác nhận bệnh nhân đã ra viện?')) {
             try {
-                await confirmDischarge(id, new Date().toISOString().split('T')[0]);
+                await confirmDischarge(id, getTodayString());
                 setNotification({ message: 'Đã lưu trữ hồ sơ', type: 'success' });
                 loadDataFromSheet();
             } catch { setNotification({ message: 'Lỗi xác nhận ra viện', type: 'error' }); }
@@ -373,7 +403,7 @@ const App: React.FC = () => {
             try {
                 await Promise.all(
                     patients.map(p =>
-                        confirmDischarge(p.id, p.dischargeDate || new Date().toISOString().split('T')[0])
+                        confirmDischarge(p.id, p.dischargeDate || getTodayString())
                     )
                 );
                 setNotification({
@@ -423,11 +453,14 @@ const App: React.FC = () => {
         if (currentView === AppView.WARD_ROUND && showServiceOnly) {
             if (!isServiceRoomPatient(p)) return false;
         }
+        if (currentView === AppView.WARD_ROUND && selectedRoomBlockId && currentBlock) {
+            if ((p.ward || '') !== currentBlock.name) return false;
+        }
         if (currentView === AppView.DISCHARGE_LIST && (!p.dischargeDate || p.status === PatientStatus.ARCHIVED || p.dischargeConfirmed)) return false;
 
         if (selectedRoomNumber && p.roomNumber !== selectedRoomNumber) return false;
         if (admissionDateFilterDate && p.admissionDate) {
-            const filterDate = admissionDateFilterDate.toISOString().split('T')[0];
+            const filterDate = getLocalIsoDate(admissionDateFilterDate);
             const pDate = normalizeDateString(p.admissionDate);
             if (pDate !== filterDate) return false;
         }
@@ -450,8 +483,10 @@ const App: React.FC = () => {
 
     // Grouping for Surgery
     const { surgeryGroups, unscheduledPatients } = useMemo(() => {
-        const today = new Date().toISOString().split('T')[0];
-        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+        const today = getTodayString();
+        const tomorrowDate = new Date();
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+        const tomorrow = getLocalIsoDate(tomorrowDate);
         const hasDate = (p: Patient) => typeof p.surgeryDate === 'string' && p.surgeryDate.trim() !== '';
         const waiting = filteredPatients.filter(p => p.isScheduledForSurgery && !hasDate(p));
         const scheduled = filteredPatients.filter(p => p.isScheduledForSurgery && hasDate(p));
@@ -465,12 +500,14 @@ const App: React.FC = () => {
         };
     }, [filteredPatients]);
 
-    const serviceFilterDate = admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : null;
+    const serviceFilterDate = admissionDateFilterDate ? getLocalIsoDate(admissionDateFilterDate) : null;
 
     const dischargeGroups = useMemo(() => {
         if (currentView !== AppView.DISCHARGE_LIST) return { today: [], tomorrow: [], upcoming: [], overdue: [] };
-        const today = new Date().toISOString().split('T')[0];
-        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+        const today = getTodayString();
+        const tomorrowDate = new Date();
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+        const tomorrow = getLocalIsoDate(tomorrowDate);
         return {
             today: filteredPatients.filter(p => normalizeDateString(p.dischargeDate) === today),
             tomorrow: filteredPatients.filter(p => normalizeDateString(p.dischargeDate) === tomorrow),
@@ -485,7 +522,7 @@ const App: React.FC = () => {
 
     // Số BN ra viện hôm nay
     const dischargeTodayCount = useMemo(() => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getTodayString();
         return rooms.flatMap(r => r.patients).filter(p =>
             p.dischargeDate &&
             normalizeDateString(p.dischargeDate) === today &&
@@ -495,7 +532,7 @@ const App: React.FC = () => {
     }, [rooms]);
 
     const handleScanServicePatients = async () => {
-        const targetDate = admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : null;
+        const targetDate = admissionDateFilterDate ? getLocalIsoDate(admissionDateFilterDate) : null;
         const patientsToSchedule = allPatients.filter(p => !p.isScheduledForSurgery && matchesServiceFilter(p, targetDate));
 
         if (patientsToSchedule.length === 0) {
@@ -538,6 +575,87 @@ const App: React.FC = () => {
         }
     };
 
+    const handleExportHtmlReport = () => {
+        const reportDate = new Date().toLocaleDateString('vi-VN');
+        const wardName = selectedRoomBlockId
+            ? rooms.find(r => r.id === selectedRoomBlockId)?.name || 'Tất cả'
+            : 'Tất cả';
+        const rowsHtml = filteredPatients.map((p, idx) => `
+            <tr>
+                <td>${idx + 1}</td>
+                <td>${escapeHtml(p.fullName)}</td>
+                <td>${escapeHtml(p.diagnosis)}</td>
+                <td>${escapeHtml(p.orders?.[0]?.content || '')}</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        `).join('');
+
+        const blankRows = Array.from({ length: 4 }).map((_, idx) => `
+            <tr>
+                <td>${filteredPatients.length + idx + 1}</td>
+                <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+            </tr>
+        `).join('');
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8" />
+            <title>Sổ đi buồng</title>
+            <style>
+                body { font-family: 'Times New Roman', serif; font-size: 14px; line-height: 1.5; margin: 32px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { border: 1px solid #cbd5f5; padding: 8px; text-align: center; }
+                th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { text-align: left; }
+                th { background: #eef2ff; }
+                header { text-align: center; }
+                .actions { text-align: right; margin-top: 16px; }
+                button { padding: 8px 16px; border: 1px solid #2563eb; background: #fff; color: #2563eb; border-radius: 6px; font-weight: 600; cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <header>
+                <h2>Sổ đi buồng</h2>
+                <p>Ngày: ${reportDate} &nbsp;|&nbsp; Khu: ${escapeHtml(wardName)}</p>
+            </header>
+            <table>
+                <thead>
+                    <tr>
+                        <th>STT</th>
+                        <th>Tên bệnh nhân</th>
+                        <th>Chẩn đoán</th>
+                        <th>Y lệnh</th>
+                        <th>Mạch</th>
+                        <th>Nhiệt</th>
+                        <th>HA</th>
+                        <th>NT</th>
+                        <th>Người thực hiện</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                    ${blankRows}
+                </tbody>
+            </table>
+            <div class="actions">
+                <button onclick="window.print()">In</button>
+            </div>
+        </body>
+        </html>
+        `;
+
+        const reportWindow = window.open('', '_blank');
+        if (reportWindow) {
+            reportWindow.document.write(html);
+            reportWindow.document.close();
+        }
+    };
+
     // --- AI SCHEDULER HANDLERS ---
     const handleOpenSurgeryScheduler = async () => {
         setIsScheduling(true);
@@ -561,7 +679,7 @@ const App: React.FC = () => {
     };
 
     const handleConfirmSchedule = (schedule: any[]) => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = getTodayString();
         schedule.forEach(item => {
             const updates = {
                 surgeryMethod: item.PPPT,
@@ -578,157 +696,200 @@ const App: React.FC = () => {
         loadDataFromSheet(); // Tải lại dữ liệu để cập nhật UI
     };
 
+    const displayPatientCount = filteredPatients.length;
+
     // --- RENDER ---
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
             {/* Header */}
             <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
-                <div className="px-4 py-3 max-w-2xl mx-auto">
-                    {/* Dòng 1: Logo, Tên App, Toggle View, Nút hành động */}
-                    <div className="flex justify-between items-center mb-3">
-                        <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2" onClick={() => setCurrentView(AppView.WARD_ROUND)}>
-                                <div className="bg-medical-500 text-white p-2 rounded-xl shadow-glow cursor-pointer">
-                                    <Stethoscope size={20} />
+                <div className="px-3 py-3 max-w-2xl mx-auto">
+                    <div className="bg-white rounded-[28px] px-4 py-3 shadow-lg border border-slate-100 flex flex-col gap-3">
+                        {/* Dòng 1: Logo, Tên App, Icon actions */}
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentView(AppView.WARD_ROUND)}>
+                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center shadow-[0_8px_20px_rgba(59,130,246,0.25)]">
+                                    <Stethoscope size={22} />
                                 </div>
-                                <h1 className="font-bold text-slate-800 text-lg cursor-pointer">Ngoại CT- Bỏng</h1>
-                            </div>
-
-                            {/* Toggle View: 1 nút 2 icon */}
-                            {currentView === AppView.WARD_ROUND && (
-                                <button
-                                    onClick={() => setDisplayMode(displayMode === 'GRID' ? 'TABLE' : 'GRID')}
-                                    className="bg-gray-100 p-2 rounded-lg hover:bg-gray-200 transition-colors"
-                                    title={displayMode === 'GRID' ? 'Chuyển sang bảng' : 'Chuyển sang thẻ'}
-                                >
-                                    {displayMode === 'GRID' ? <TableIcon size={18} className="text-slate-600"/> : <LayoutGrid size={18} className="text-slate-600"/>}
-                                </button>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                             <button onClick={loadDataFromSheet} disabled={isLoadingPatients} className="bg-blue-100 text-blue-600 p-2.5 rounded-full hover:bg-blue-200 transition-colors" title="Tải lại dữ liệu">
-                                <RefreshCw size={20} className={isLoadingPatients ? 'animate-spin' : ''} />
-                            </button>
-                            <button onClick={() => setIsAddPatientModalOpen(true)} className="bg-medical-500 text-white p-2.5 rounded-full shadow-lg hover:bg-medical-600 active:scale-95 transition-all" title="Thêm bệnh nhân mới">
-                                <Plus size={24} />
-                            </button>
-                            <div className="relative">
-                                <button onClick={() => setShowHamburgerMenu(!showHamburgerMenu)} className="bg-gray-100 text-gray-700 p-2.5 rounded-full hover:bg-gray-200" title="Menu">
-                                    <Menu size={20} />
-                                </button>
-                                {showHamburgerMenu && (
-                                    <div className="absolute top-12 right-0 bg-white shadow-xl border border-gray-100 rounded-2xl py-2 w-48 z-50 animate-in fade-in zoom-in-95">
-                                        <button onClick={() => { setCurrentView(AppView.STATISTICS); setShowHamburgerMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 font-medium">
-                                            <PieChart size={18} className="text-purple-500" /> Thống kê
-                                        </button>
-                                        <button onClick={() => { setCurrentView(AppView.SETTINGS); setShowHamburgerMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 font-medium">
-                                            <SettingsIcon size={18} className="text-slate-500" /> Cài đặt
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Dòng 2: Search & Filters (Tối giản hơn) */}
-                    {currentView !== AppView.SETTINGS && currentView !== AppView.STATISTICS && (
-                        <div className="space-y-2.5">
-
-                            {/* SEARCH BAR & DATE FILTER - Cùng 1 hàng */}
-                            <div className="flex items-center gap-2">
-                                {/* Search bar */}
-                                <div className="relative group flex-1">
-                                    <input
-                                        type="text"
-                                        placeholder="Tìm tên, số phòng..."
-                                        className="w-full bg-gray-100 border-none rounded-2xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-medical-500/50 focus:bg-white transition-all"
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                    />
-                                    <Search className="absolute left-3.5 top-3 text-gray-400 group-focus-within:text-medical-500" size={18} />
-                                </div>
-
-                                {/* Date filter compact */}
-                                <div className="flex items-center gap-1">
-                                    <button onClick={() => handleShiftDate(-1)} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 shrink-0">
-                                        <ChevronLeft size={18} />
-                                    </button>
-
-                                    <div
-                                        className="flex items-center justify-center gap-1.5 px-3 h-9 bg-gray-100 rounded-lg text-sm font-bold text-slate-700 cursor-pointer hover:bg-gray-200 transition-colors min-w-[80px]"
-                                        onClick={() => dateInputRef.current?.showPicker?.() || dateInputRef.current?.focus()}
-                                    >
-                                        <input
-                                            ref={dateInputRef}
-                                            type="date"
-                                            value={admissionDateFilterDate ? admissionDateFilterDate.toISOString().split('T')[0] : ''}
-                                            onChange={(e) => setAdmissionDateFilterDate(e.target.value ? new Date(e.target.value) : null)}
-                                            className="absolute opacity-0 pointer-events-none"
-                                            title="Chọn ngày vào viện"
-                                        />
-                                        {admissionDateFilterDate ? (
-                                            <>
-                                                <CalendarDays size={14} className="text-blue-500 shrink-0" />
-                                                <span className="text-xs">{formatDateDisplay(admissionDateFilterDate)}</span>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleClearDate(); }}
-                                                    className="w-4 h-4 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-200 active:scale-95"
-                                                >
-                                                    <X size={10} />
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <CalendarDays size={14} className="text-gray-400 shrink-0" />
-                                                <span className="text-xs text-gray-400">Ngày</span>
-                                            </>
+                                <div>
+                                    <div className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                                        Ngoại CT - Bỏng
+                                        <span className="hidden sm:inline-flex text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">{displayPatientCount} BN</span>
+                                        {currentView === AppView.WARD_ROUND && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setDisplayMode(displayMode === 'GRID' ? 'TABLE' : 'GRID')}
+                                                className="sm:hidden inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border border-gray-200 text-gray-600 bg-white shadow-sm"
+                                            >
+                                                {displayMode === 'GRID' ? <TableIcon size={14} /> : <LayoutGrid size={14} />}
+                                                {displayMode === 'GRID' ? 'Bảng' : 'Thẻ'}
+                                            </button>
                                         )}
                                     </div>
-
-                                    <button onClick={() => handleShiftDate(1)} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 shrink-0">
-                                        <ChevronRight size={18} />
-                                    </button>
+                                    <p className="text-xs text-slate-400">Sổ đi buồng trực tuyến</p>
                                 </div>
                             </div>
-
-                            {/* KHU VỰC 3: DROPDOWNS */}
-                            <div className="flex gap-2 items-start flex-wrap">
-                                <div className="relative flex-1">
-                                    <Filter size={14} className="absolute left-3 top-3 text-gray-500 pointer-events-none"/>
-                                    <select 
-                                        value={selectedRoomBlockId} 
-                                        onChange={(e) => { setSelectedRoomBlockId(e.target.value); setSelectedRoomNumber(''); }}
-                                        className="w-full bg-white border border-gray-200 text-gray-700 text-sm rounded-xl pl-9 pr-8 py-2.5 appearance-none focus:outline-none focus:border-medical-500 font-medium"
-                                    >
-                                        <option value="">Tất cả khu vực</option>
-                                        {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                    </select>
-                                    <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none"/>
-                                </div>
-                                <div className="relative w-[35%]">
-                                    <select 
-                                        value={selectedRoomNumber} 
-                                        onChange={(e) => setSelectedRoomNumber(e.target.value)}
-                                        disabled={!selectedRoomBlockId}
-                                        className={`w-full bg-white border border-gray-200 text-gray-700 text-sm rounded-xl px-3 py-2.5 appearance-none focus:outline-none focus:border-medical-500 font-medium ${!selectedRoomBlockId && 'opacity-60 bg-gray-50'}`}
-                                    >
-                                        <option value="">Tất cả</option>
-                                        {availableRoomsInBlock.map(r => <option key={r} value={r}>P.{r}</option>)}
-                                    </select>
-                                    <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none"/>
-                                </div>
-                                {currentView === AppView.WARD_ROUND && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowServiceOnly(prev => !prev)}
-                                        className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border ${showServiceOnly ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'}`}
-                                    >
-                                        <Filter size={12} /> {showServiceOnly ? 'Đang lọc BN DV' : 'Lọc BN dịch vụ'}
+                            <div className="flex items-center gap-3">
+                                <div className="hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 shadow-inner">
+                                    {currentView === AppView.WARD_ROUND && (
+                                        <button
+                                            onClick={() => setDisplayMode(displayMode === 'GRID' ? 'TABLE' : 'GRID')}
+                                            className="p-2 text-slate-600 hover:text-blue-500 transition-colors"
+                                            title={displayMode === 'GRID' ? 'Chuyển sang bảng' : 'Chuyển sang thẻ'}
+                                        >
+                                            {displayMode === 'GRID' ? <TableIcon size={18}/> : <LayoutGrid size={18}/>}
+                                        </button>
+                                    )}
+                                    <button onClick={loadDataFromSheet} disabled={isLoadingPatients} className="p-2 text-slate-600 hover:text-blue-500 transition-colors disabled:opacity-50" title="Tải lại dữ liệu">
+                                        <RefreshCw size={18} className={isLoadingPatients ? 'animate-spin' : ''} />
                                     </button>
-                                )}
+                                    <button onClick={handleExportHtmlReport} className="p-2 text-slate-600 hover:text-blue-500 transition-colors" title="Xuất HTML Sổ đi buồng">
+                                        <FileText size={18} />
+                                    </button>
+                                    <div className="relative">
+                                        <button onClick={() => setShowHamburgerMenu(prev => !prev)} className="p-2 text-slate-600 hover:text-blue-500 transition-colors" title="Menu nhanh">
+                                            <Menu size={18} />
+                                        </button>
+                                        {showHamburgerMenu && (
+                                            <div className="absolute right-0 top-12 bg-white shadow-xl border border-gray-100 rounded-2xl py-2 w-48 z-50 animate-in fade-in zoom-in-95">
+                                                <button onClick={() => { setCurrentView(AppView.STATISTICS); setShowHamburgerMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 font-medium">
+                                                    <PieChart size={18} className="text-purple-500" /> Thống kê
+                                                </button>
+                                                <button onClick={() => { setCurrentView(AppView.SETTINGS); setShowHamburgerMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 font-medium">
+                                                    <SettingsIcon size={18} className="text-slate-500" /> Cài đặt
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsAddPatientModalOpen(true)} className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-5 py-2 rounded-full font-bold shadow-[0_10px_20px_rgba(59,130,246,0.35)] hover:opacity-90 active:scale-95 transition-all flex items-center gap-2" title="Thêm bệnh nhân mới">
+                                    <Plus size={18} /> Thêm mới
+                                </button>
+                                <div className="relative sm:hidden">
+                                    <button onClick={() => setShowHamburgerMenu(prev => !prev)} className="bg-gray-100 text-gray-700 p-2.5 rounded-full hover:bg-gray-200" title="Menu">
+                                        <Menu size={20} />
+                                    </button>
+                                    {showHamburgerMenu && (
+                                        <div className="absolute top-12 right-0 bg-white shadow-xl border border-gray-100 rounded-2xl py-2 w-48 z-50 animate-in fade-in zoom-in-95">
+                                            <button onClick={() => { setCurrentView(AppView.STATISTICS); setShowHamburgerMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 font-medium">
+                                                <PieChart size={18} className="text-purple-500" /> Thống kê
+                                            </button>
+                                            <button onClick={() => { setCurrentView(AppView.SETTINGS); setShowHamburgerMenu(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-3 font-medium">
+                                                <SettingsIcon size={18} className="text-slate-500" /> Cài đặt
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    )}
+
+                        {/* Dòng 2: Search & Filters (Tối giản hơn) */}
+                        {currentView !== AppView.SETTINGS && currentView !== AppView.STATISTICS && (
+                            <>
+                                <div className="sm:hidden flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => setFiltersVisible(prev => !prev)}
+                                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-full border border-gray-200 text-gray-600 bg-gray-100"
+                                    >
+                                        <Filter size={12} />
+                                        {filtersVisible ? 'Ẩn bộ lọc' : 'Hiện bộ lọc'}
+                                    </button>
+                                </div>
+                                <div className={`space-y-2.5 ${filtersVisible ? '' : 'hidden sm:block'}`}>
+                                    {/* SEARCH BAR & DATE FILTER - Cùng 1 hàng */}
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative group flex-1">
+                                            <input
+                                                type="text"
+                                            placeholder="Tìm tên, số phòng..."
+                                            className="w-full bg-gray-100 border-none rounded-2xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-medical-500/50 focus:bg-white transition-all"
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                        />
+                                        <Search className="absolute left-3.5 top-3 text-gray-400 group-focus-within:text-medical-500" size={18} />
+                                    </div>
+
+                                    <div className="flex items-center gap-1">
+                                        <button onClick={() => handleShiftDate(-1)} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 shrink-0">
+                                            <ChevronLeft size={18} />
+                                        </button>
+                                        <div
+                                            className="flex items-center justify-center gap-1.5 px-3 h-9 bg-gray-100 rounded-lg text-sm font-bold text-slate-700 cursor-pointer hover:bg-gray-200 transition-colors min-w-[80px]"
+                                            onClick={() => dateInputRef.current?.showPicker?.() || dateInputRef.current?.focus()}
+                                        >
+                                            <input
+                                                ref={dateInputRef}
+                                                type="date"
+                                                value={admissionDateFilterDate ? getLocalIsoDate(admissionDateFilterDate) : ''}
+                                                onChange={(e) => setAdmissionDateFilterDate(e.target.value ? new Date(e.target.value) : null)}
+                                                className="absolute opacity-0 pointer-events-none"
+                                                title="Chọn ngày vào viện"
+                                            />
+                                            {admissionDateFilterDate ? (
+                                                <>
+                                                    <CalendarDays size={14} className="text-blue-500 shrink-0" />
+                                                    <span className="text-xs">{formatDateDisplay(admissionDateFilterDate)}</span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleClearDate(); }}
+                                                        className="w-4 h-4 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-200 active:scale-95"
+                                                    >
+                                                        <X size={10} />
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CalendarDays size={14} className="text-gray-400 shrink-0" />
+                                                    <span className="text-xs text-gray-400">Ngày</span>
+                                                </>
+                                            )}
+                                        </div>
+                                        <button onClick={() => handleShiftDate(1)} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 active:scale-95 shrink-0">
+                                            <ChevronRight size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* KHU VỰC 3: DROPDOWNS */}
+                                <div className="flex gap-2 items-start flex-wrap">
+                                    <div className="relative flex-1">
+                                        <Filter size={14} className="absolute left-3 top-3 text-gray-500 pointer-events-none" />
+                                        <select
+                                            value={selectedRoomBlockId}
+                                            onChange={(e) => { setSelectedRoomBlockId(e.target.value); setSelectedRoomNumber(''); }}
+                                            className="w-full bg-white border border-gray-200 text-gray-700 text-sm rounded-xl pl-9 pr-8 py-2.5 appearance-none focus:outline-none focus:border-medical-500 font-medium"
+                                        >
+                                            <option value="">Tất cả khu vực</option>
+                                            {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                        </select>
+                                        <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+                                    </div>
+                                    <div className="relative w-[35%]">
+                                        <select
+                                            value={selectedRoomNumber}
+                                            onChange={(e) => setSelectedRoomNumber(e.target.value)}
+                                            disabled={!selectedRoomBlockId}
+                                            className={`w-full bg-white border border-gray-200 text-gray-700 text-sm rounded-xl px-3 py-2.5 appearance-none focus:outline-none focus:border-medical-500 font-medium ${!selectedRoomBlockId && 'opacity-60 bg-gray-50'}`}
+                                        >
+                                            <option value="">Tất cả</option>
+                                            {availableRoomsInBlock.map(r => <option key={r} value={r}>P.{r}</option>)}
+                                        </select>
+                                        <ChevronDown size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+                                    </div>
+                                    {currentView === AppView.WARD_ROUND && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowServiceOnly(prev => !prev)}
+                                            className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border ${showServiceOnly ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'}`}
+                                        >
+                                            <Filter size={12} /> {showServiceOnly ? 'Đang lọc BN DV' : 'Lọc BN dịch vụ'}
+                                        </button>
+                                    )}
+                                </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             </header>
 
@@ -1003,45 +1164,40 @@ const App: React.FC = () => {
                                     <div className="space-y-4">
                                         {filteredPatients.length === 0 ? <div className="text-center py-20 text-gray-400">Không tìm thấy bệnh nhân.</div> : (
                                             <>
-                                                {selectedRoomBlockId ? (
-                                                    filteredPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelSurgery(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => { const pat = rooms.flatMap(r => r.patients).find(item => item.id === id); if(pat) handleUpdatePatient(id, { isSevere: !p.isSevere }); }} />)
-                                                ) : (
-                                                    rooms.map(block => {
-                                                        const blockPatients = block.patients.filter(passesGlobalFilters);
-                                                        if (blockPatients.length === 0) return null;
-                                                        
-                                                        // Option 1: Khu nhà luôn có gradient xanh - chỉ khác icon mở/đóng
-                                                        const isBlockExpanded = expandedBlocks[block.id];
-                                                        const blockClass = 'bg-gradient-to-r from-blue-600 to-blue-400 shadow-lg';
-                                                        const iconClass = 'text-white';
-                                                        const textClass = 'text-white';
-                                                        const badgeClass = 'bg-white text-blue-600';
-                                                        const chevronClass = 'text-white';
+                                                {rooms.map(block => {
+                                                    const blockPatients = block.patients.filter(passesGlobalFilters);
+                                                    if (blockPatients.length === 0) return null;
+                                                    
+                                                    const isBlockExpanded = expandedBlocks[block.id];
+                                                    const blockClass = 'bg-gradient-to-r from-blue-600 to-blue-400 shadow-lg';
+                                                    const iconClass = 'text-white';
+                                                    const textClass = 'text-white';
+                                                    const badgeClass = 'bg-white text-blue-600';
+                                                    const chevronClass = 'text-white';
 
-                                                        return (
-                                                            <div key={block.id} className="bg-white/70 backdrop-blur-sm rounded-3xl shadow-sm border border-white/50 mb-3 overflow-hidden">
-                                                                <div
-                                                                    className={`px-4 py-3 rounded-3xl flex justify-between items-center cursor-pointer select-none transition-colors ${blockClass}`}
-                                                                    onClick={() => setExpandedBlocks(prev => ({...prev, [block.id]: !prev[block.id]}))}
-                                                                >
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className={`font-bold text-base ${textClass}`}>{block.name}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${badgeClass}`}>{blockPatients.length} bệnh nhân</span>
-                                                                        {isBlockExpanded ? <ChevronUp size={18} className={chevronClass}/> : <ChevronDown size={18} className={chevronClass}/>}
-                                                                    </div>
+                                                    return (
+                                                        <div key={block.id} className="bg-white/70 backdrop-blur-sm rounded-3xl shadow-sm border border-white/50 mb-3 overflow-hidden">
+                                                            <div
+                                                                className={`px-4 py-3 rounded-3xl flex justify-between items-center cursor-pointer select-none transition-colors ${blockClass}`}
+                                                                onClick={() => setExpandedBlocks(prev => ({...prev, [block.id]: !prev[block.id]}))}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`font-bold text-base ${textClass}`}>{block.name}</span>
                                                                 </div>
-
-                                                                {expandedBlocks[block.id] && (
-                                                                    <div className="px-3 pb-3 pt-0">
-                                                                        {blockPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelSurgery(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
-                                                                    </div>
-                                                                )}
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${badgeClass}`}>{blockPatients.length} bệnh nhân</span>
+                                                                    {isBlockExpanded ? <ChevronUp size={18} className={chevronClass}/> : <ChevronDown size={18} className={chevronClass}/>}
+                                                                </div>
                                                             </div>
-                                                        )
-                                                    })
-                                                )}
+
+                                                            {expandedBlocks[block.id] && (
+                                                                <div className="px-3 pb-3 pt-0">
+                                                                    {blockPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelRegistration(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )
+                                                })}
                                             </>
                                         )}
                                     </div>

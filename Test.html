@@ -3,221 +3,250 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giao Diện Y Tế Cao Cấp</title>
+    <title>Header Final - Ngoại CT Bỏng</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
     <style>
         :root {
-            /* Palette màu tinh tế hơn (Slate & Indigo) */
-            --primary: #3b82f6;
-            --bg-app: #f1f5f9;
-            --card-bg: #ffffff;
-            --text-dark: #0f172a;
-            --text-gray: #64748b;
-            --shadow-subtle: 0 4px 20px rgba(148, 163, 184, 0.15);
-            --border-light: #e2e8f0;
-            
-            /* Màu trạng thái Pastel (Dịu mắt nhưng rõ ràng) */
-            --tag-red-bg: #fef2f2; --tag-red-text: #ef4444;
-            --tag-blue-bg: #eff6ff; --tag-blue-text: #3b82f6;
-            --tag-orange-bg: #fff7ed; --tag-orange-text: #f97316;
-            --tag-gray-bg: #f8fafc; --tag-gray-text: #64748b;
+            --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            --primary-shadow: rgba(37, 99, 235, 0.3);
+            --bg-gray: #f8fafc;
+            --border-color: #e2e8f0;
+            --text-color: #475569;
+            --hover-bg: #fff;
+            --hover-text: #0f172a;
         }
 
         body {
-            font-family: 'Plus Jakarta Sans', sans-serif; /* Font hiện đại hơn Inter */
-            background-color: var(--bg-app);
-            color: var(--text-dark);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #eef2f6;
             margin: 0;
-            padding: 16px;
-            padding-bottom: 80px;
-            -webkit-font-smoothing: antialiased;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
         }
 
-        .container { max-width: 500px; margin: 0 auto; }
-
-        /* --- HEADER KHU VỰC (Gradient Tinh tế) --- */
-        .room-header {
-            background: linear-gradient(135deg, #2563eb, #4f46e5); /* Gradient Indigo-Blue */
-            color: white;
-            padding: 14px 20px;
+        /* Khung giả lập App */
+        .app-container {
+            width: 100%;
+            max-width: 900px;
+            background: #fff;
             border-radius: 20px;
-            margin-bottom: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0,0,0,0.02);
+            overflow: hidden;
+        }
+
+        /* --- HEADER CHÍNH --- */
+        .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 8px 15px rgba(37, 99, 235, 0.2); /* Shadow màu xanh tạo độ sâu */
-            position: relative;
-            z-index: 10;
+            padding: 16px 24px;
+            background: #fff;
+            border-bottom: 1px solid var(--border-color);
         }
-        
-        .room-title { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.02em; }
-        .room-count { background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
 
-        /* --- DANH SÁCH BỆNH NHÂN (FLOATING STYLE) --- */
-        .patient-card {
-            background: var(--card-bg);
-            border-radius: 16px; /* Bo góc lớn kiểu iOS */
-            padding: 12px 16px;
-            margin-bottom: 8px; /* Tách rời nhau */
-            box-shadow: var(--shadow-subtle);
-            border: 1px solid transparent;
+        /* Logo & Tiêu đề */
+        .header-left {
             display: flex;
             align-items: center;
             gap: 12px;
-            transition: all 0.2s ease;
-            position: relative;
-            overflow: hidden;
-            height: 68px; /* Chiều cao cố định tối ưu */
         }
-
-        .patient-card:active { transform: scale(0.98); }
-
-        /* Thanh trạng thái bên trái (Mỏng và tinh tế) */
-        .status-indicator {
-            width: 4px;
-            height: 24px;
-            border-radius: 4px;
-            background-color: var(--border-light);
-        }
-        .status-indicator.red { background-color: var(--tag-red-text); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); } /* Glowing effect */
-        .status-indicator.blue { background-color: var(--tag-blue-text); }
-
-        /* Thông tin chính */
-        .main-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
         
-        .row-top { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
-        .name { font-weight: 700; font-size: 1rem; color: var(--text-dark); letter-spacing: -0.01em; }
-        .age { font-size: 0.85rem; color: var(--text-gray); font-weight: 500; }
-        
-        .diagnosis { 
-            font-size: 0.85rem; color: var(--text-gray); 
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
-            max-width: 200px;
-        }
-
-        /* Thông tin phụ (Tags & Actions) */
-        .meta-info {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 6px;
-        }
-
-        /* Capsule Tag (Viên thuốc) */
-        .capsule {
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 20px;
+        .logo-box {
+            width: 42px;
+            height: 42px;
+            background: #eff6ff; /* Xanh rất nhạt */
+            color: #2563eb;
+            border-radius: 12px;
             display: flex;
             align-items: center;
-            gap: 4px;
-            letter-spacing: 0.02em;
+            justify-content: center;
+            font-size: 22px;
         }
-        .capsule.pt { background-color: var(--tag-orange-bg); color: var(--tag-orange-text); }
-        .capsule.rv { background-color: var(--tag-blue-bg); color: var(--tag-blue-text); }
-        
-        .more-btn { color: #94a3b8; padding: 4px; border-radius: 50%; cursor: pointer; }
 
-        /* Action Badge (Số lượng y lệnh) */
-        .action-badge {
-            font-size: 0.7rem;
+        .title-box h1 {
+            font-size: 16px;
+            margin: 0;
             font-weight: 700;
+            color: #1e293b;
+        }
+        
+        /* Badge số lượng bệnh nhân giả lập */
+        .patient-count {
+            font-size: 12px;
             color: #64748b;
             background: #f1f5f9;
             padding: 2px 8px;
+            border-radius: 10px;
+            margin-top: 4px;
+            display: inline-block;
+            font-weight: 600;
+        }
+
+        /* --- THANH CÔNG CỤ (CAPSULE ACTION BAR) --- */
+        .action-capsule {
+            display: flex;
+            align-items: center;
+            background: var(--bg-gray);
+            border: 1px solid var(--border-color);
+            padding: 5px;
+            border-radius: 50px; /* Bo tròn dạng viên thuốc */
+            gap: 4px;
+        }
+
+        /* Style chung cho các nút icon tròn */
+        .btn-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: var(--text-color);
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        /* Hiệu ứng Hover cho nút icon */
+        .btn-icon:hover {
+            background: var(--hover-bg);
+            color: var(--primary-gradient); /* Icon đổi màu khi hover */
+            color: #2563eb;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transform: translateY(-1px);
+        }
+
+        /* Tooltip đơn giản bằng CSS */
+        .btn-icon[data-title]:hover::after {
+            content: attr(data-title);
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #fff;
+            font-size: 11px;
+            padding: 4px 8px;
             border-radius: 6px;
-            display: flex; align-items: center; gap: 4px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 1;
+            z-index: 10;
+        }
+
+        /* Vạch ngăn cách dọc */
+        .divider {
+            width: 1px;
+            height: 20px;
+            background-color: #cbd5e1;
+            margin: 0 4px;
+        }
+
+        /* Nút Primary (Thêm mới) đặc biệt */
+        .btn-primary {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 38px;
+            padding: 0 20px 0 16px; /* Padding bên phải rộng hơn chút cho cân */
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            border-radius: 20px; /* Bo tròn dạng viên thuốc nhỏ */
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 4px 10px var(--primary-shadow);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 15px rgba(37, 99, 235, 0.5);
+            transform: translateY(-1px);
+            filter: brightness(1.05);
+        }
+        
+        .btn-primary i {
+            font-size: 18px;
+        }
+
+        /* --- RESPONSIVE MOBILE --- */
+        /* Trên điện thoại nhỏ, ẩn chữ "Thêm mới", biến nút thành hình tròn */
+        @media (max-width: 600px) {
+            .btn-primary span {
+                display: none;
+            }
+            .btn-primary {
+                padding: 0;
+                width: 38px;
+                border-radius: 50%;
+                justify-content: center;
+            }
+            .title-box h1 {
+                display: none; /* Ẩn tên khoa nếu quá chật */
+            }
+            .logo-box {
+                margin-right: 0;
+            }
+            .header {
+                padding: 12px;
+            }
         }
 
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <div class="room-header">
-            <span class="room-title">Khu B1 - B4</span>
-            <span class="room-count">3 bệnh nhân</span>
-        </div>
-
-        <div class="patient-card">
-            <div class="status-indicator red"></div>
-            
-            <div class="main-info">
-                <div class="row-top">
-                    <span class="name">Trần Văn Hùng</span>
-                    <span class="age">50t</span>
+    <div class="app-container">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo-box">
+                    <i class="ph-duotone ph-hospital"></i>
                 </div>
-                <div class="diagnosis">Gãy kín 1/3 giữa xương đùi (P)</div>
-            </div>
-
-            <div class="meta-info">
-                <div class="capsule pt">
-                    <i data-lucide="scalpel" style="width:12px"></i> PT: 27/11
+                <div class="title-box">
+                    <h1>Ngoại CT - Bỏng</h1>
+                    <span class="patient-count">32 BN</span>
                 </div>
             </div>
+
+            <div class="action-capsule">
+                
+                <button class="btn-icon" data-title="Chuyển giao diện">
+                    <i class="ph ph-table"></i> 
+                    </button>
+
+                <button class="btn-icon" data-title="Làm mới dữ liệu">
+                    <i class="ph ph-arrows-clockwise"></i>
+                </button>
+
+                <button class="btn-icon" data-title="Xuất báo cáo / In">
+                    <i class="ph ph-printer"></i>
+                </button>
+
+                <button class="btn-icon" data-title="Mở rộng chức năng">
+                    <i class="ph ph-list"></i>
+                </button>
+
+                <div class="divider"></div>
+
+                <button class="btn-primary">
+                    <i class="ph-bold ph-plus"></i>
+                    <span>Thêm Mới</span>
+                </button>
+
+            </div>
+        </header>
+
+        <div style="background-color: #f8fafc; height: 300px; display: flex; align-items: center; justify-content: center; border-top: 1px dashed #e2e8f0;">
+            <p style="color: #94a3b8;">Nội dung danh sách bệnh nhân hiển thị tại đây...</p>
         </div>
-
-        <div class="patient-card">
-            <div class="status-indicator blue"></div>
-            
-            <div class="main-info">
-                <div class="row-top">
-                    <span class="name">Nguyễn Thị Lan</span>
-                    <span class="age">34t</span>
-                </div>
-                <div class="diagnosis">U bã đậu vùng vai phải</div>
-            </div>
-
-            <div class="meta-info">
-                <div class="capsule rv">
-                    <i data-lucide="log-out" style="width:12px"></i> Rv: 26/11
-                </div>
-            </div>
-        </div>
-
-        <div class="patient-card">
-            <div class="status-indicator" style="background-color: transparent"></div>
-            
-            <div class="main-info">
-                <div class="row-top">
-                    <span class="name">Lê Văn An</span>
-                    <span class="age">28t</span>
-                </div>
-                <div class="diagnosis">Vết thương phần mềm cẳng tay</div>
-            </div>
-
-            <div class="meta-info">
-                 <div class="action-badge">
-                    <i data-lucide="clipboard-list" style="width:12px"></i> 3 y lệnh
-                 </div>
-            </div>
-        </div>
-
-        <div class="room-header" style="background: linear-gradient(135deg, #ef4444, #f43f5e); margin-top: 24px;">
-            <span class="room-title">Cấp Cứu 1</span>
-            <span class="room-count">2 bệnh nhân</span>
-        </div>
-
-        <div class="patient-card">
-            <div class="status-indicator red"></div>
-            <div class="main-info">
-                <div class="row-top">
-                    <span class="name">Phạm Văn Đồng</span>
-                    <span class="age">65t</span>
-                </div>
-                <div class="diagnosis">Chấn thương sọ não kín / TDH</div>
-            </div>
-            <div class="meta-info">
-                <i data-lucide="more-horizontal" class="more-btn"></i>
-            </div>
-        </div>
-
     </div>
 
-    <script>
-        lucide.createIcons();
-    </script>
 </body>
 </html>
