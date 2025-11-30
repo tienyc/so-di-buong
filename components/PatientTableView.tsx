@@ -1,5 +1,5 @@
 import React from 'react';
-import { Patient } from '../types';
+import { Patient, OrderStatus, OrderType } from '../types';
 import { AlertCircle, LogOut, Syringe } from 'lucide-react';
 
 interface PatientTableViewProps {
@@ -9,6 +9,18 @@ interface PatientTableViewProps {
 }
 
 const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTitle, onPatientClick }) => {
+    const today = new Date();
+    const todayStr = [
+        today.getFullYear(),
+        String(today.getMonth() + 1).padStart(2, '0'),
+        String(today.getDate()).padStart(2, '0')
+    ].join('-');
+
+    const normalizeDateString = (dateStr?: string): string => {
+        if (!dateStr) return '';
+        const target = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+        return target;
+    };
     
     // Hàm kiểm tra ngày hôm nay
     const isToday = (dateStr?: string) => {
@@ -50,6 +62,16 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
         return null;
     };
 
+    const getTodayOrders = (patient: Patient) => {
+        const orders = Array.isArray(patient.orders) ? patient.orders : [];
+        return orders.filter(order => {
+            if (order.status !== OrderStatus.PENDING) return false;
+            if (order.type === OrderType.DISCHARGE) return false;
+            const execDate = normalizeDateString(order.executionDate || order.createdDate);
+            return execDate === todayStr;
+        });
+    };
+
     return (
         <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden flex flex-col h-full">
             
@@ -71,11 +93,14 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
                             <th className="px-2 py-2 text-[10px] font-bold uppercase w-8 text-center bg-gray-50">STT</th>
                             <th className="px-2 py-2 text-[10px] font-bold uppercase w-[45%] bg-gray-50">Tên / Trạng thái</th>
                             <th className="px-2 py-2 text-[10px] font-bold uppercase bg-gray-50">Chẩn đoán</th>
+                            <th className="px-2 py-2 text-[10px] font-bold uppercase bg-gray-50 w-[28%]">Y lệnh hôm nay</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {patients.length > 0 ? (
-                            patients.map((patient, index) => (
+                            patients.map((patient, index) => {
+                                const todayOrders = getTodayOrders(patient);
+                                return (
                                 <tr 
                                     key={patient.id}
                                     onClick={() => onPatientClick(patient.id)}
@@ -111,11 +136,35 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
                                             {patient.diagnosis || "-"}
                                         </p>
                                     </td>
+                                    <td className="px-2 py-2.5 align-top">
+                                        {todayOrders.length === 0 ? (
+                                            <span className="text-[11px] text-gray-400">Không có</span>
+                                        ) : (
+                                            <div className="space-y-1">
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold text-blue-600 bg-blue-50 border border-blue-100">
+                                                    {todayOrders.length} y lệnh
+                                                </span>
+                                                <ul className="text-[11px] text-gray-600 space-y-1">
+                                                    {todayOrders.slice(0, 2).map(order => (
+                                                        <li key={order.id} className="line-clamp-2">
+                                                            • {order.content || 'Y lệnh'}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                                {todayOrders.length > 2 && (
+                                                    <span className="text-[10px] text-gray-400">
+                                                        +{todayOrders.length - 2} y lệnh khác
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </td>
                                 </tr>
-                            ))
+                                );
+                            })
                         ) : (
                             <tr>
-                                <td colSpan={3} className="text-center py-10 text-gray-300 text-sm italic">
+                                <td colSpan={4} className="text-center py-10 text-gray-300 text-sm italic">
                                     Danh sách trống
                                 </td>
                             </tr>

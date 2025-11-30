@@ -1,285 +1,474 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { getWardFromRoom, getRoomWardMappingForPrompt, getAllValidRooms } from "./roomMapping";
+// services/geminiService.ts
 
-// Re-export for other components
+import { GoogleGenAI, Type } from "@google/genai";
+import {
+  getWardFromRoom,
+  getRoomWardMappingForPrompt,
+  getAllValidRooms,
+} from "./roomMapping";
+
+// Re-export cho nơi khác dùng nếu cần
 export { getWardFromRoom } from "./roomMapping";
 
-const apiKey = process.env.API_KEY || '';
+const apiKey = process.env.API_KEY || "";
 const ai = new GoogleGenAI({ apiKey });
 
-// Helper to parse unstructured text (e.g., voice dictation or pasted notes) into patient data
+/* ------------------------------------------------------------------ */
+/*  Helpers chung                                                     */
+/* ------------------------------------------------------------------ */
+
+function safeJsonParse<T>(text: string | undefined | null, fallback: T): T {
+  if (!text) return fallback;
+  try {
+    return JSON.parse(text) as T;
+  } catch (err) {
+    console.error("JSON parse error:", err);
+    return fallback;
+  }
+}
+
+// Xây lookup cho room: "b2" -> "B2"
+function buildRoomLookup() {
+  const validRooms = getAllValidRooms();
+  const roomLookup: Record<string, string> = {};
+  for (const room of validRooms) {
+    roomLookup[room.toLowerCase().trim()] = room;
+  }
+  return { validRooms, roomLookup };
+}
+
+const DEFAULT_ROOM = "Cấp cứu 1";
+
+/**
+ * Nếu raw rỗng → DEFAULT_ROOM
+ * Nếu raw trùng (không phân biệt hoa/thường) với danh sách hợp lệ → trả về dạng chuẩn (vd "B2")
+ * Nếu raw không khớp gì → DEFAULT_ROOM
+ */
+function normalizeRoomNumber(
+  raw: string | undefined | null,
+  roomLookup: Record<string, string>
+): string {
+  if (!raw) return DEFAULT_ROOM;
+  const key = raw.toLowerCase().trim();
+  return roomLookup[key] || DEFAULT_ROOM;
+}
+
+/**
+ * Chuẩn hoá ngày vào viện:
+ * - Nếu AI trả YYYY-MM-DD hợp lệ → dùng
+ * - Nếu không có / sai format → dùng todayISO
+ */
+function normalizeAdmissionDate(
+  raw: string | undefined | null,
+  todayISO: string
+): string {
+  if (!raw) return todayISO;
+  const value = raw.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return todayISO;
+}
+
+/**
+ * Chuẩn hoá phòng mổ: chỉ cho phép "1","7","8","9","10".
+ * Nếu sai/không khớp → rỗng để layer trên xử lý tiếp.
+ */
+const VALID_OR_ROOMS = ["1", "7", "8", "9", "10"];
+
+function normalizeOperatingRoom(raw: string | undefined | null): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  const noLeadingZero = trimmed.replace(/^0+/, "") || "0";
+  return VALID_OR_ROOMS.includes(noLeadingZero) ? noLeadingZero : "";
+}
+
+/**
+ * Chuẩn hoá giờ mổ: chỉ nhận "HH:mm". Nếu sai → rỗng.
+ */
+function normalizeSurgeryTime(raw: string | undefined | null): string {
+  if (!raw) return "";
+  const value = raw.trim();
+  if (/^\d{2}:\d{2}$/.test(value)) return value;
+  return "";
+}
+
+/* ------------------------------------------------------------------ */
+/*  1. Dùng AI để phân tích text nhập bệnh nhân                       */
+/* ------------------------------------------------------------------ */
+
+type RawPatient = {
+  fullName?: string;
+  age?: number;
+  gender?: string;
+  diagnosis?: string;
+  roomNumber?: string;
+  historySummary?: string;
+  admissionDate?: string;
+};
+
 export const parsePatientInput = async (inputText: string) => {
-    try {
-        const currentDate = new Date().toLocaleDateString('vi-VN');
-        const todayISO = new Date().toISOString().split('T')[0];
+  try {
+    const now = new Date();
+    const currentDate = now.toLocaleDateString("vi-VN");
+    const todayISO = now.toISOString().split("T")[0];
 
-        // Get valid rooms mapping for the prompt
-        const validRooms = getAllValidRooms();
-        const roomWardMapping = getRoomWardMappingForPrompt();
+    const { validRooms, roomLookup } = buildRoomLookup();
+    const roomWardMapping = getRoomWardMappingForPrompt();
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Bạn là AI chuyên phân tích danh sách bệnh nhân trong ứng dụng y tế SmartRound.
+    const prompt = `
+Bạn là AI chuyên phân tích danh sách bệnh nhân trong ứng dụng y tế SmartRound.
 
 **NHIỆM VỤ:**
-Phân tích văn bản không có cấu trúc (có thể 1 hoặc nhiều bệnh nhân) và trả về mảng JSON.
+Phân tích văn bản không có cấu trúc (có thể 1 hoặc nhiều bệnh nhân) và trả về MẢNG JSON theo schema.
 
 **NGÀY HIỆN TẠI:** ${currentDate} (${todayISO})
 
 **QUY TẮC PHÂN TÍCH:**
 
-1️⃣ **Họ tên (fullName):**
+1️⃣ Họ tên (fullName):
    - Viết hoa chữ cái đầu mỗi từ
    - Loại bỏ số thứ tự: "1. Nguyễn Văn A" → "Nguyễn Văn A"
    - Ví dụ: "anh tùng" → "Anh Tùng"
 
-2️⃣ **Tuổi (age):**
+2️⃣ Tuổi (age):
    - Tìm số kèm: "45t", "45T", "45 tuổi", "t45"
    - Hoặc số 2 chữ số (10-99) đứng sau tên, không phải ngày tháng
    - Không tìm thấy → 0
 
-3️⃣ **Giới tính (gender):**
+3️⃣ Giới tính (gender):
    - Nam: "nam", "n", "m", "ông", "anh", "bác" (nam)
    - Nữ: "nữ", "nu", "f", "bà", "chị", "cô"
    - Không rõ → ""
 
-4️⃣ **⚠️ PHÒNG (roomNumber) - CỰC KỲ QUAN TRỌNG:**
-   **CHỈ được trả về CHÍNH XÁC một trong các giá trị sau (phân biệt hoa thường):**
-   ${validRooms.map(r => `"${r}"`).join(', ')}
+4️⃣ ⚠️ PHÒNG (roomNumber):
+   - Nếu trong text có ghi phòng (B1, B2, B8, Hồi sức, Cấp cứu 1, DV1, v.v.) thì hãy trích ra.
+   - Khi trả về JSON, roomNumber CHỈ được dùng một trong các giá trị sau (đúng chính tả như bên dưới):
+     ${validRooms.map((r) => `"${r}"`).join(", ")}
 
-   **KHÔNG ĐƯỢC** tự sáng tạo tên phòng khác!
-   **KHÔNG ĐƯỢC** viết "Phòng B4" - chỉ viết "B4"
-   **KHÔNG ĐƯỢC** viết "Buồng B1" - chỉ viết "B1"
+   - Không được sáng tạo thêm tên phòng mới.
+   - Nếu không tìm thấy phòng nào phù hợp trong input → roomNumber = "${DEFAULT_ROOM}".
 
-   Nếu không tìm thấy phòng trong input → roomNumber = "Cấp cứu 1"
-
-5️⃣ **⚠️ KHU (ward) - KHÔNG TỰ Ý NHẬP:**
-   **TUYỆT ĐỐI KHÔNG TỰ ĐIỀN ward!**
-   **LUÔN LUÔN để ward = ""** (chuỗi rỗng)
-
-   Lý do: Backend sẽ tự động map đúng ward từ roomNumber theo bảng sau:
+5️⃣ ⚠️ KHU (ward):
+   - Bạn có thể để ward rỗng hoặc bỏ qua trong JSON.
+   - Backend sẽ tự map ward từ roomNumber theo bảng sau:
 ${roomWardMapping}
 
-   Ví dụ:
-   - roomNumber = "B1" → Backend tự set ward = "B1-B4"
-   - roomNumber = "B8" → Backend tự set ward = "Tiền Phẫu"
-   - roomNumber = "Cấp cứu 1" → Backend tự set ward = "Cấp Cứu 1"
-
-6️⃣ **Chẩn đoán (diagnosis):**
+6️⃣ Chẩn đoán (diagnosis):
    - Tên bệnh: gãy, trật, viêm, u, áp xe, nhiễm trùng...
    - Vị trí: đùi, chân, bàn chân, ngón tay...
-   - Viết hoa chữ cái đầu câu
-   - Ví dụ: "gãy xương đùi" → "Gãy xương đùi"
+   - Viết hoa chữ cái đầu câu.
 
-7️⃣ **Tình trạng (historySummary):**
+7️⃣ Tình trạng (historySummary):
    - Triệu chứng: đau, sưng, đỏ, sốt, khó thở...
    - Diễn biến: tỉnh táo, tiếp xúc tốt, ăn uống được...
 
-8️⃣ **Ngày vào viện (admissionDate):**
-   - Nhận dạng: "23/11", "ngày 23", "hôm nay", "hôm qua"
-   - Chuẩn hóa: YYYY-MM-DD
-   - Mặc định: ${todayISO}
+8️⃣ Ngày vào viện (admissionDate):
+   - Nếu thấy: "23/11", "23-11", "Ngày 23", "hôm nay", "hôm qua"… → hãy suy luận và trả về dạng YYYY-MM-DD.
+   - Nếu KHÔNG thấy thông tin ngày → admissionDate = "${todayISO}".
 
 **VÍ DỤ ĐÚNG:**
-Input: "1. Anh Tùng 45t, gãy xương đùi, đau nhiều, B1"
-Output: [{"fullName":"Anh Tùng","age":45,"gender":"Nam","roomNumber":"B1","ward":"","diagnosis":"Gãy xương đùi","historySummary":"Đau nhiều","admissionDate":"${todayISO}"}]
 
-Input: "Bà Lan 67t, Hậu phẫu"
-Output: [{"fullName":"Bà Lan","age":67,"gender":"Nữ","roomNumber":"Hậu phẫu","ward":"","diagnosis":"","historySummary":"","admissionDate":"${todayISO}"}]
+Input: "Nguyễn Văn B, 45t, gãy xương đùi, phòng B2"
+Output: [{
+  "fullName": "Nguyễn Văn B",
+  "age": 45,
+  "gender": "Nam",
+  "roomNumber": "B2",
+  "diagnosis": "Gãy xương đùi",
+  "historySummary": "",
+  "admissionDate": "${todayISO}"
+}]
+
+Input: "Bà Lan 67t, Hậu phẫu, Hôm qua nhập viện"
+Output: [{
+  "fullName": "Bà Lan",
+  "age": 67,
+  "gender": "Nữ",
+  "roomNumber": "${DEFAULT_ROOM}",
+  "diagnosis": "Hậu phẫu",
+  "historySummary": "",
+  "admissionDate": "YYYY-MM-DD tương ứng hôm qua"
+}]
 
 **INPUT TEXT:**
 "${inputText}"
 
 **LƯU Ý QUAN TRỌNG:**
-- LUÔN trả về mảng, dù chỉ có 1 bệnh nhân
-- roomNumber: CHỈ chọn từ danh sách có sẵn, KHÔNG tự sáng tạo
-- ward: LUÔN LUÔN để "" (rỗng), backend sẽ tự động điền
-- Không thêm field nào khác ngoài schema`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            fullName: { type: Type.STRING, description: "Họ tên viết hoa chữ cái đầu" },
-                            age: { type: Type.NUMBER, description: "Tuổi, mặc định 0" },
-                            gender: { type: Type.STRING, description: "Nam/Nữ hoặc rỗng" },
-                            diagnosis: { type: Type.STRING, description: "Chẩn đoán, viết hoa chữ đầu" },
-                            roomNumber: { type: Type.STRING, description: "Mã phòng: B1, DV1, CC1..." },
-                            ward: { type: Type.STRING, description: "Tên khu" },
-                            historySummary: { type: Type.STRING, description: "Tình trạng lâm sàng" },
-                            admissionDate: { type: Type.STRING, description: "YYYY-MM-DD" }
-                        },
-                        required: ["fullName", "diagnosis"]
-                    }
-                }
-            }
-        });
-
-        const parsedPatients = JSON.parse(response.text || '[]');
-
-        // CRITICAL: Auto-map ward from roomNumber using the single source of truth
-        return parsedPatients.map((patient: any) => ({
-            ...patient,
-            ward: getWardFromRoom(patient.roomNumber || 'Cấp cứu 1')
-        }));
-    } catch (error) {
-        console.error("Error parsing patient input:", error);
-        return [];
-    }
-};
-
-// Helper to format surgery schedule for Google Sheets
-export const formatForGoogleSheet = async (patients: any[]) => {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `I have a list of patients scheduled for surgery. Format this data into a CSV string (comma separated) that represents a professional surgery schedule spreadsheet. 
-            Columns should be: Date, Room, Patient Name, Age, Diagnosis, Notes.
-            
-            Patients Data: ${JSON.stringify(patients)}`,
-        });
-        return response.text;
-    } catch (error) {
-        console.error("Error formatting for sheet:", error);
-        return "Error formatting data.";
-    }
-};
-
-export const suggestOrders = async (diagnosis: string, history: string) => {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `Suggest 3-5 standard medical orders (in Vietnamese) for a patient with:
-            Diagnosis: ${diagnosis}
-            History: ${history}
-            
-            Return ONLY a JSON array of strings.`,
-             config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                }
-            }
-        });
-        return JSON.parse(response.text || '[]');
-    } catch (error) {
-        return [];
-    }
-};
-
-export const generateSurgerySchedule = async (patients: any[], alreadyScheduled: any[]) => {
-    try {
-        const patientsToSchedule = patients.map(p => ({ 
-            id: p.id,
-            fullName: p.fullName,
-            diagnosis: p.diagnosis,
-        }));
-
-        const scheduledForContext = alreadyScheduled.map(p => ({
-            id: p.id,
-            operatingRoom: p.operatingRoom,
-            surgeryTime: p.surgeryTime,
-            surgeonName: p.surgeonName,
-        }));
-
-        if (patientsToSchedule.length === 0) {
-            return [];
-        }
-
-        const prompt = `
-1.  **VAI TRÒ & MỤC TIÊU**
-    Bạn là Trợ lý AI Điều phối Lịch mổ, chuyên khoa Chấn thương Chỉnh hình. Nhiệm vụ của bạn là nhận một danh sách bệnh nhân, xác định thứ tự ưu tiên, tính toán thời gian mổ, và xếp lịch mổ cho họ vào các phòng mổ có sẵn một cách tối ưu nhất, **tránh xung đột với các ca đã có lịch sẵn**.
-
-2.  **THÔNG TIN ĐẦU VÀO**
-    -   **Danh sách bệnh nhân cần xếp:** Một mảng JSON các bệnh nhân, mỗi người có \`id\`, \`fullName\`, và \`diagnosis\`.
-    -   **Danh sách bệnh nhân đã có lịch:** Dùng để kiểm tra và tránh xếp trùng giờ, trùng phòng.
-    -   **Lịch làm việc:**
-        -   Bắt đầu ca sáng: 08:00
-        -   Kết thúc ca sáng (nghỉ trưa): 11:30
-        -   Bắt đầu ca chiều: 13:30
-        -   Kết thúc ca chiều: 17:00
-    -   **Phòng mổ có sẵn:** ["Phòng 1", "Phòng 7", "Phòng 8", "Phòng 9", "Phòng 10"]
-
-3.  **QUY TRÌNH XỬ LÝ (Từng bước)**
-
-    **Bước 1: Phân tích & Ước tính thời gian cho mỗi bệnh nhân CẦN XẾP LỊCH**
-    a.  **Xác định 'PPPT' (Phương pháp phẫu thuật):** Dựa vào \`diagnosis\`.
-        -   "PT", "Phương tiện", "nẹp vít", "Đinh K" -> "Tháo phương tiện"
-        -   "U phần mềm", "U..." -> "Bóc u"
-        -   "Nhiễm trùng" -> "PT nạo viêm"
-        -   "Khuyết hổng" -> "PT chuyển vạt da"
-        -   "Gãy xương" -> "PT kết hợp xương"
-        -   "Gãy cổ xương đùi" -> "PT thay khớp háng bán phần"
-        -   "Hoại tử chỏm xương đùi" -> "PT thay khớp háng toàn phần"
-        -   "Đứt dây chằng" -> "PTNS tái tạo dây chằng"
-    b.  **Ước tính 'duration' (Thời gian mổ):** Dựa vào 'PPPT'.
-        -   **60 phút:** "PT thay khớp háng bán phần", "PT thay khớp háng toàn phần", "PT chuyển vạt da", "PTNS tái tạo dây chằng", "PT kết hợp xương".
-        -   **30 phút:** "Tháo phương tiện", "Bóc u", "PT nạo viêm".
-
-    **Bước 2: Sắp xếp thứ tự ưu tiên mổ (chỉ cho bệnh nhân CẦN XẾP LỊCH)**
-    1.  **Nhiễm trùng:** \`diagnosis\` chứa "viêm", "nhiễm trùng", "áp xe", "hoại tử".
-    2.  **Ca đại phẫu:** \`duration\` là 60 phút.
-    3.  **Ca trung phẫu:** \`duration\` là 30 phút.
-
-    **Bước 3: Xếp lịch vào các phòng mổ**
-    Tuần tự xếp từng bệnh nhân (theo thứ tự đã ưu tiên) vào các "slot" trống.
-    -   **QUAN TRỌNG NHẤT:** Một "slot" chỉ được coi là trống nếu nó không bị trùng giờ và trùng phòng với bất kỳ ca nào trong danh sách **BỆNH NHÂN ĐÃ CÓ LỊCH**.
-    -   Phải tuân thủ lịch nghỉ trưa (không có ca nào bắc cầu qua 11:30 - 13:30).
-    -   **Quy tắc chọn phòng:**
-        -   Nếu \`diagnosis\` chứa "viêm", "nhiễm trùng", "áp xe", "hoại tử" -> **Ưu tiên Phòng 1**.
-        -   Các trường hợp còn lại -> **Ưu tiên Phòng 7, 8, 9, 10**.
-
-4.  **DỮ LIỆU ĐẦU VÀO**
-
-    **A. BỆNH NHÂN CẦN XẾP LỊCH:**
-    \`\`\`json
-    ${JSON.stringify(patientsToSchedule)}
-    \`\`\`
-
-    **B. BỆNH NHÂN ĐÃ CÓ LỊCH (Để tránh trùng lặp):**
-    \`\`\`json
-    ${JSON.stringify(scheduledForContext)}
-    \`\`\`
-
-5.  **ĐỊNH DẠNG ĐẦU RA**
-    Chỉ trả về một mảng JSON. Mỗi object phải chứa:
-    -   \`id\`: ID của bệnh nhân.
-    -   \`PPPT\`: Phương pháp phẫu thuật đã xác định.
-    -   \`operatingRoom\`: Phòng mổ được gán.
-    -   \`surgeryTime\`: Giờ bắt đầu mổ, định dạng "HH:mm".
-    -   \`surgeonName\`: Nếu 'PPPT' chứa "PTNS" hoặc "thay khớp", điền "Ts Minh", ngược lại để trống.
+- LUÔN trả về mảng JSON, dù chỉ có 1 bệnh nhân.
+- roomNumber: CHỈ chọn từ danh sách có sẵn, hoặc "${DEFAULT_ROOM}" nếu không tìm được.
+- ward: không bắt buộc, backend sẽ bỏ qua và tự map lại từ roomNumber.
+- Không thêm field nào khác ngoài: fullName, age, gender, diagnosis, roomNumber, historySummary, admissionDate.
 `;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.STRING },
-                            PPPT: { type: Type.STRING },
-                            operatingRoom: { type: Type.STRING },
-                            surgeryTime: { type: Type.STRING },
-                            surgeonName: { type: Type.STRING },
-                        },
-                        required: ["id", "PPPT", "operatingRoom", "surgeryTime"]
-                    }
-                }
-            }
-        });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              fullName: {
+                type: Type.STRING,
+                description: "Họ tên viết hoa chữ cái đầu",
+              },
+              age: { type: Type.NUMBER, description: "Tuổi, mặc định 0" },
+              gender: {
+                type: Type.STRING,
+                description: "Nam/Nữ hoặc rỗng",
+              },
+              diagnosis: {
+                type: Type.STRING,
+                description: "Chẩn đoán, viết hoa chữ đầu",
+              },
+              roomNumber: {
+                type: Type.STRING,
+                description: "Mã phòng hợp lệ hoặc Cấp cứu 1",
+              },
+              historySummary: {
+                type: Type.STRING,
+                description: "Tình trạng lâm sàng",
+              },
+              admissionDate: {
+                type: Type.STRING,
+                description: "YYYY-MM-DD",
+              },
+            },
+            required: ["fullName", "diagnosis"],
+          },
+        },
+      },
+    });
 
-        const suggestions = JSON.parse(response.text || '[]');
-        return suggestions;
+    const rawPatients = safeJsonParse<RawPatient[]>(response.text, []);
 
-    } catch (error) {
-        console.error("Lỗi khi tạo lịch mổ:", error);
-        return { error: true, message: "Không thể nhận được gợi ý từ AI. Vui lòng thử lại." };
-    }
+    const cleaned = rawPatients
+      .filter(
+        (p) =>
+          p &&
+          typeof p.fullName === "string" &&
+          p.fullName.trim() &&
+          typeof p.diagnosis === "string"
+      )
+      .map((p) => {
+        const roomNumber = normalizeRoomNumber(p.roomNumber, roomLookup);
+        const ward = getWardFromRoom(roomNumber) || ""; // luôn lấy từ mapping, không tạo khu mới
+
+        return {
+          fullName: p.fullName!.trim(),
+          age: typeof p.age === "number" ? p.age : 0,
+          gender: p.gender ?? "",
+          diagnosis: p.diagnosis!.trim(),
+          historySummary: (p.historySummary ?? "").trim(),
+          roomNumber, // B2 / Hậu phẫu / Cấp cứu 1… (đã chuẩn hóa)
+          ward, // auto từ roomNumber
+          admissionDate: normalizeAdmissionDate(p.admissionDate, todayISO), // nếu không có → hôm nay
+        };
+      });
+
+    return cleaned;
+  } catch (error) {
+    console.error("Error parsing patient input:", error);
+    return [];
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/*  2. Format dữ liệu cho Google Sheets                               */
+/* ------------------------------------------------------------------ */
+
+export const formatForGoogleSheet = async (patients: any[]) => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `I have a list of patients scheduled for surgery. Format this data into a CSV string (comma separated) that represents a professional surgery schedule spreadsheet. 
+Columns should be: Date, Room, Patient Name, Age, Diagnosis, Notes.
+
+Patients Data: ${JSON.stringify(patients)}`,
+    });
+    return response.text;
+  } catch (error) {
+    console.error("Error formatting for sheet:", error);
+    return "Error formatting data.";
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/*  3. Gợi ý y lệnh từ chẩn đoán + diễn biến                          */
+/* ------------------------------------------------------------------ */
+
+export const suggestOrders = async (diagnosis: string, history: string) => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `Suggest 3-5 standard medical orders (in Vietnamese) for a patient with:
+Diagnosis: ${diagnosis}
+History: ${history}
+
+Return ONLY a JSON array of strings.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+        },
+      },
+    });
+
+    return safeJsonParse<string[]>(response.text, []);
+  } catch (error) {
+    console.error("Error suggesting orders:", error);
+    return [];
+  }
+};
+
+/* ------------------------------------------------------------------ */
+/*  4. Dùng AI gợi ý lịch mổ (có chuẩn hoá phòng mổ & giờ)            */
+/* ------------------------------------------------------------------ */
+
+type AIScheduleRaw = {
+  id?: string;
+  PPPT?: string;
+  operatingRoom?: string;
+  surgeryTime?: string;
+  surgeonName?: string;
+};
+
+export const generateSurgerySchedule = async (
+  patients: any[],
+  alreadyScheduled: any[]
+) => {
+  try {
+    const patientsToSchedule = patients.map((p) => ({
+      id: p.id,
+      fullName: p.fullName,
+      diagnosis: p.diagnosis,
+    }));
+
+    const scheduledForContext = alreadyScheduled.map((p) => ({
+      id: p.id,
+      operatingRoom: p.operatingRoom,
+      surgeryTime: p.surgeryTime,
+      info: p.PPPT || p.diagnosis || "Phẫu thuật",
+    }));
+
+    if (patientsToSchedule.length === 0) return [];
+
+    const prompt = `
+I. VAI TRÒ
+Bạn là AI điều phối lịch mổ Chấn thương chỉnh hình.
+
+II. DỮ LIỆU
+1. List A (Cần xếp): ${JSON.stringify(patientsToSchedule)}
+2. List B (Đã xếp): ${JSON.stringify(scheduledForContext)}
+3. Tài nguyên:
+   - Buổi sáng: 08:00-11:30
+   - Buổi chiều: 13:30-17:00
+   - Phòng mổ hợp lệ: "1", "7", "8", "9", "10" (output phải đúng các chuỗi này, không thêm phòng khác).
+
+III. QUY TRÌNH XỬ LÝ (LOGIC CỐT LÕI)
+
+BƯỚC 1: CHUẨN HÓA PPPT & THỜI GIAN (BẮT BUỘC CHÍNH XÁC)
+Bạn phải tạo ra trường 'PPPT' theo công thức ghép chuỗi sau:
+**Công thức:** \`[TÊN CƠ BẢN] + " " + [VỊ TRÍ & BÊN]\`
+
+1. Quy tắc xác định [TÊN CƠ BẢN] (Ưu tiên từ trên xuống):
+   - Nếu chứa "Nẹp", "Vít", "Đinh", "Phương tiện" -> "PT Tháo phương tiện"
+   - Nếu chứa "U", "Nang", "Hạch", "Bướu" -> "PT Bóc u"
+   - Nếu chứa "Viêm", "Nhiễm trùng", "Áp xe", "Hoại tử", "Hở" -> "PT Nạo viêm"
+   - Nếu chứa "Khuyết hổng", "Lộ xương" -> "PT Chuyển vạt da"
+   - Nếu chứa "Gãy cổ xương đùi" -> "PT Thay khớp háng"
+   - Nếu chứa "Gãy" (các vị trí khác) -> "PT KHX"
+   - Nếu chứa "Dây chằng chéo trước ", "DCCT", "DCCS" -> "PTNS tái tạo" "dây chằng chéo trước" hoặc " DCCT", "DCCS".
+   - Không thuộc các nhóm trên -> "Phẫu thuật"
+
+2. Quy tắc trích xuất [VỊ TRÍ & BÊN]:
+   - Tìm từ chỉ vị trí: đùi, cẳng chân, cánh tay, cẳng tay, vai, cổ tay, ngón...
+   - Viết thường không viết hoa các từ chỉ vị trí
+   - Tìm từ chỉ bên: "T" (Trái), "P" (Phải), "2 bên".
+   - Giữ nguyên chữ hoa/thường của T và P.
+
+3. Ví dụ mẫu:
+   - Input: "Gãy kín 1/3 giữa xương đùi T" -> Output PPPT: "PT KHX Đùi T"
+   - Input: "U mỡ vùng bả vai P" -> Output PPPT: "PT Bóc u vai P"
+   - Input: "Nhiễm trùng vết mổ cẳng chân" -> Output PPPT: "PT Nạo viêm cẳng chân"
+
+4. Xác định Duration (Thời lượng):
+   - 60 phút: nếu PPPT chứa "Thay khớp", "Chuyển vạt", "Dây chằng", "KHX".
+   - 30 phút: các trường hợp còn lại.
+   (Áp dụng quy tắc tính Duration này cho cả List A và List B để tính khoảng bận).
+
+BƯỚC 2: PHÂN LOẠI ƯU TIÊN (Priority)
+1. Ưu tiên 1 (Nhiễm trùng/Viêm): Bắt buộc xếp Phòng 1.
+2. Ưu tiên 2 (Đại phẫu 60p): Xếp sau.
+3. Ưu tiên 3 (Tiểu phẫu 30p): Xếp cuối.
+
+BƯỚC 3: XẾP LỊCH & CHECK XUNG ĐỘT
+Duyệt từng ca A tìm Slot trống:
+1. Phân tầng phòng:
+   - Ca Nhiễm trùng -> Chỉ Phòng 1.
+   - Ca Sạch -> Ưu tiên lấp đầy Phòng 7, 8. Nếu kín mới sang 9, 10.
+2. Luật Check Trùng (Collision Check):
+   - Slot [Start, End] KHÔNG ĐƯỢC trùng phút nào với List B tại phòng đó.
+   - KHÔNG ĐƯỢC trùng với các ca A đã xếp trước đó.
+   - KHÔNG ĐƯỢC vắt qua trưa (11:30-13:30).
+3. Nếu không tìm được slot hợp lệ cho một ca, bạn vẫn trả ca đó với operatingRoom = "" và surgeryTime = "" (để backend biết là chưa xếp được).
+
+IV. ĐỊNH DẠNG ĐẦU RA
+Trả về MẢNG JSON:
+[
+  {
+    "id": "...",              // id bệnh nhân tương ứng
+    "PPPT": "Theo chuẩn ở Bước 1",
+    "operatingRoom": "1|7|8|9|10 hoặc rỗng nếu không xếp được",
+    "surgeryTime": "HH:mm hoặc rỗng nếu không xếp được",
+    "surgeonName": "Tên phẫu thuật viên gợi ý hoặc rỗng"
+  }
+]`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              PPPT: { type: Type.STRING },
+              operatingRoom: { type: Type.STRING },
+              surgeryTime: { type: Type.STRING },
+              surgeonName: { type: Type.STRING },
+            },
+            required: ["id", "PPPT", "operatingRoom", "surgeryTime"],
+          },
+        },
+      },
+    });
+
+    const raw = safeJsonParse<AIScheduleRaw[]>(response.text, []);
+
+    const cleaned = raw
+      .filter((s) => s && s.id && s.PPPT)
+      .map((s) => {
+        const operatingRoom = normalizeOperatingRoom(s.operatingRoom);
+        const surgeryTime = normalizeSurgeryTime(s.surgeryTime);
+
+        return {
+          id: s.id as string,
+          PPPT: s.PPPT!.trim(),
+          operatingRoom, // chỉ "1|7|8|9|10" hoặc ""
+          surgeryTime, // "HH:mm" hoặc ""
+          surgeonName: (s.surgeonName ?? "").trim(),
+        };
+      });
+
+    return cleaned;
+  } catch (error) {
+    console.error("Lỗi AI xếp lịch:", error);
+    return [];
+  }
 };

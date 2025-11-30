@@ -189,6 +189,18 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                         </div>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className={labelClass}>Ngày vào viện</label>
+                            <input
+                                type="date"
+                                value={formData.admissionDate || ''}
+                                onChange={(e) => handleChange('admissionDate', e.target.value)}
+                                className={inputClass}
+                            />
+                        </div>
+                    </div>
+
                     <div>
                         <label className={labelClass}>Chẩn đoán</label>
                         <textarea

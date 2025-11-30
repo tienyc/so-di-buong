@@ -245,7 +245,14 @@ const App: React.FC = () => {
     const isServiceRoomName = useCallback((room?: string) => {
         if (!room) return false;
         const normalizedRoom = room.trim().toLowerCase();
-        return normalizedRoom.startsWith('dịch vụ') || normalizedRoom.startsWith('dv');
+        const simplifiedRoom = normalizedRoom.replace(/\./g, '').replace(/\s+/g, '');
+        return (
+            normalizedRoom.startsWith('dịch vụ') ||
+            normalizedRoom.startsWith('dv') ||
+            normalizedRoom.includes('trung cao') ||
+            normalizedRoom.includes('tr.cao') ||
+            simplifiedRoom.includes('trcao')
+        );
     }, []);
 
     const isServiceRoomPatient = useCallback((patient: Patient) => {
@@ -786,7 +793,7 @@ const App: React.FC = () => {
                 operatingRoom: item.operatingRoom,
                 surgeonName: item.surgeonName,
                 surgeryTime: item.surgeryTime,
-                surgeryDate: today,
+                surgeryDate: item.surgeryDate || today,
             };
             handleUpdatePatient(item.id, updates);
         });
@@ -1357,7 +1364,7 @@ const App: React.FC = () => {
 
                                                             {expandedBlocks[block.id] && (
                                                                 <div className="px-3 pb-3 pt-0">
-                                                                    {blockPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelRegistration(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
+{blockPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelSurgery(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1410,6 +1417,7 @@ const App: React.FC = () => {
                 suggestedSchedule={suggestedSchedule}
                 isLoading={isScheduling}
                 onConfirm={handleConfirmSchedule}
+                doctors={doctors}
             />
         </div>
     );
