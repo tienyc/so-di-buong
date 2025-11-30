@@ -240,8 +240,6 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
 
     const getCardStyle = () => {
         if (patient.status === PatientStatus.DISCHARGED) return 'bg-slate-50 opacity-60 shadow-sm';
-        if (isSevere) return 'bg-white [box-shadow:0_0_8px_rgba(239,68,68,0.4),0_1px_3px_0_rgba(0,0,0,0.1)]';
-        if (isNew) return 'bg-white shadow-sm';
         return 'bg-white shadow-sm';
     };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, OrderType } from './types'; 
 import { fetchAllData, savePatient, saveOrder, confirmDischarge, fetchSettings, deletePatient } from './services/api';
 import { generateSurgerySchedule } from './services/geminiService';
@@ -92,6 +92,14 @@ const formatDateVN = (isoDate?: string): string => {
     }
     return isoDate;
 };
+
+const formatDayMonth = (isoDate?: string): string => {
+    if (!isoDate) return '--/--';
+    const normalized = normalizeDateString(isoDate);
+    if (!normalized) return '--/--';
+    const [year, month, day] = normalized.split('-');
+    return `${day}/${month}`;
+};
 // --- END HELPER FUNCTIONS ---
 
 const App: React.FC = () => {
@@ -138,6 +146,7 @@ const App: React.FC = () => {
     const [isHospitalSyncing, setIsHospitalSyncing] = useState(false);
     const [showServiceOnly, setShowServiceOnly] = useState(false);
     const [filtersVisible, setFiltersVisible] = useState(true);
+    const [headerHidden, setHeaderHidden] = useState(false);
 
     const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
     const [expandedBlocks, setExpandedBlocks] = useState<{[key: string]: boolean}>({});
@@ -161,7 +170,8 @@ const App: React.FC = () => {
     };
 
     // Ref cho date input
-    const dateInputRef = React.useRef<HTMLInputElement>(null);
+    const dateInputRef = useRef<HTMLInputElement>(null);
+    const scrollMetaRef = useRef({ lastTop: 0 });
 
 
     // --- MAIN DATA LOADING ---
@@ -205,6 +215,27 @@ const App: React.FC = () => {
         const timeout = setTimeout(() => setNotification(null), 3000);
         return () => clearTimeout(timeout);
     }, [notification]);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+            if (scrollTop < 0) return;
+
+            const lastTop = scrollMetaRef.current.lastTop;
+            const threshold = 60;
+
+            if (scrollTop > lastTop && scrollTop > threshold) {
+                setHeaderHidden(true);
+            } else if (scrollTop < lastTop - 5 || scrollTop <= threshold) {
+                setHeaderHidden(false);
+            }
+
+            scrollMetaRef.current.lastTop = scrollTop <= 0 ? 0 : scrollTop;
+        };
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [currentView]);
 
 
     // --- DERIVED DATA & ACTION HANDLERS ---
@@ -578,6 +609,14 @@ const App: React.FC = () => {
     }, [filteredPatients, currentView]);
 
 
+    const formatSurgeryDateLabel = (dateKey: string, groupKey: keyof typeof surgeryGroups) => {
+        if (dateKey === 'unknown' || !dateKey) return 'Chưa rõ ngày';
+        const base = formatDayMonth(dateKey);
+        if (groupKey === 'today') return `Hôm nay · ${base}`;
+        if (groupKey === 'tomorrow') return `Ngày mai · ${base}`;
+        return base;
+    };
+
     const severeCount = rooms.flatMap(r => r.patients).filter(p => p.isSevere && p.status !== PatientStatus.ARCHIVED).length;
     const surgeryCount = rooms.flatMap(r => r.patients).filter(p => p.isScheduledForSurgery && (!p.surgeryDate || p.surgeryDate === "") && p.status !== PatientStatus.ARCHIVED).length;
 
@@ -763,8 +802,8 @@ const App: React.FC = () => {
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
             {/* Header */}
-            <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
-                <div className="px-3 py-3 max-w-2xl mx-auto">
+            <header className={`sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm transition-transform duration-300 ease-out ${headerHidden ? '-translate-y-full' : 'translate-y-0'}`}>
+                <div className="px-3 py-3 pb-4 max-w-2xl mx-auto relative">
                     <div className="bg-white rounded-[28px] px-4 py-3 shadow-lg border border-slate-100 flex flex-col gap-3">
                         {/* Dòng 1: Logo, Tên App, Icon actions */}
                         <div className="flex items-center justify-between gap-4">
@@ -773,21 +812,28 @@ const App: React.FC = () => {
                                     <Stethoscope size={22} />
                                 </div>
                                 <div>
-                                    <div className="font-bold text-slate-900 text-lg flex items-center gap-2">
-                                        Ngoại CT - Bỏng
-                                        <span className="hidden sm:inline-flex text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">{displayPatientCount} BN</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-slate-900 text-base sm:text-lg">
+                                            <span className="sm:hidden">Ngoại CT</span>
+                                            <span className="hidden sm:inline">Ngoại CT - Bỏng</span>
+                                        </span>
                                         {currentView === AppView.WARD_ROUND && (
                                             <button
                                                 type="button"
                                                 onClick={() => setDisplayMode(displayMode === 'GRID' ? 'TABLE' : 'GRID')}
-                                                className="sm:hidden inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border border-gray-200 text-gray-600 bg-white shadow-sm"
+                                                className="sm:hidden inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-gray-200 text-gray-600 bg-white shadow-sm"
                                             >
-                                                {displayMode === 'GRID' ? <TableIcon size={14} /> : <LayoutGrid size={14} />}
+                                                {displayMode === 'GRID' ? <TableIcon size={12} /> : <LayoutGrid size={12} />}
                                                 {displayMode === 'GRID' ? 'Bảng' : 'Thẻ'}
                                             </button>
                                         )}
                                     </div>
-                                    <p className="text-xs text-slate-400">Sổ đi buồng trực tuyến</p>
+                                    <div className="mt-1 flex items-center gap-2">
+                                        <span className="inline-flex text-[10px] sm:text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                                            {displayPatientCount} BN
+                                        </span>
+                                        <span className="hidden sm:inline text-[11px] text-slate-400">Sổ đi buồng trực tuyến</span>
+                                    </div>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -823,8 +869,10 @@ const App: React.FC = () => {
                                         )}
                                     </div>
                                 </div>
-                                <button onClick={() => setIsAddPatientModalOpen(true)} className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-5 py-2 rounded-full font-bold shadow-[0_10px_20px_rgba(59,130,246,0.35)] hover:opacity-90 active:scale-95 transition-all flex items-center gap-2" title="Thêm bệnh nhân mới">
-                                    <Plus size={18} /> Thêm mới
+                                <button onClick={() => setIsAddPatientModalOpen(true)} className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-full font-semibold shadow-[0_10px_20px_rgba(59,130,246,0.35)] hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 min-w-[90px] justify-center" title="Thêm bệnh nhân mới">
+                                    <Plus size={13} className="sm:size-[16px]" />
+                                    <span className="sm:hidden">Thêm</span>
+                                    <span className="hidden sm:inline">Thêm mới</span>
                                 </button>
                                 <div className="relative sm:hidden">
                                     <button onClick={() => setShowHamburgerMenu(prev => !prev)} className="bg-gray-100 text-gray-700 p-2.5 rounded-full hover:bg-gray-200" title="Menu">
@@ -857,14 +905,14 @@ const App: React.FC = () => {
                                         {filtersVisible ? 'Ẩn bộ lọc' : 'Hiện bộ lọc'}
                                     </button>
                                 </div>
-                                <div className={`space-y-2.5 ${filtersVisible ? '' : 'hidden sm:block'}`}>
+                                <div className={`space-y-1 ${filtersVisible ? '' : 'hidden'}`}>
                                     {/* SEARCH BAR & DATE FILTER - Cùng 1 hàng */}
                                     <div className="flex items-center gap-2">
                                         <div className="relative group flex-1">
                                             <input
                                                 type="text"
                                             placeholder="Tìm tên, số phòng..."
-                                            className="w-full bg-gray-100 border-none rounded-2xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-medical-500/50 focus:bg-white transition-all"
+                                            className="w-full bg-gray-100 border-none rounded-2xl pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-medical-500/50 focus:bg-white transition-all"
                                             value={searchQuery}
                                             onChange={(e) => setSearchQuery(e.target.value)}
                                         />
@@ -951,6 +999,16 @@ const App: React.FC = () => {
                             </>
                         )}
                     </div>
+                    {currentView !== AppView.SETTINGS && currentView !== AppView.STATISTICS && (
+                        <button
+                            type="button"
+                            aria-label={filtersVisible ? 'Ẩn bộ lọc' : 'Hiện bộ lọc'}
+                            onClick={() => setFiltersVisible(prev => !prev)}
+                            className="hidden sm:flex absolute left-1/2 -bottom-4 -translate-x-1/2 items-center justify-center w-8 h-4 rounded-b-full rounded-t-none border border-gray-200 bg-white text-slate-500 shadow-[0_4px_14px_rgba(15,23,42,0.15)] hover:text-blue-500 transition-colors z-20"
+                        >
+                            {filtersVisible ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        </button>
+                    )}
                 </div>
             </header>
 
@@ -962,7 +1020,7 @@ const App: React.FC = () => {
             )}
 
             {/* Main Content */}
-            <main className="flex-1 px-4 pt-4 pb-28 overflow-y-auto max-w-2xl mx-auto w-full">
+            <main className="flex-1 px-4 pt-4 pb-28 max-w-2xl mx-auto w-full">
                 
                 {currentView === AppView.SETTINGS && (
                     <SettingsView 
@@ -1156,46 +1214,85 @@ const App: React.FC = () => {
                                                                 {isOpen ? <ChevronUp size={20} className="text-orange-400"/> : <ChevronDown size={20} className="text-orange-400"/>}
                                                             </div>
                                                             {isOpen && list.length > 0 && (
-                                                                <div className="p-3 space-y-3">
-                                                                    {list.map(p => {
-                                                                         const timeLabel = formatSurgeryTime(p.surgeryTime) || '--:--';
-                                                                         const hour = p.surgeryTime && p.surgeryTime.includes(':') ? parseInt(p.surgeryTime.split(':')[0], 10) : null;
-                                                                         const isAfternoon = hour !== null && hour >= 12;
-                                                                         return (
-                                                                         <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-gray-100 relative">
-                                                                             <div className="flex flex-col items-center justify-center w-14 border-r border-gray-100 pr-3">
-                                                                                <span className={`text-xl font-bold ${isAfternoon ? 'text-blue-500' : 'text-orange-500'}`}>{timeLabel}</span>
-                                                                             </div>
-                                                                             <div className="flex-1">
-                                                                                <div className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
-                                                                                    {p.fullName}
-                                                                                    {isServicePatientToday(p) && (
-                                                                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">DV hôm nay</span>
-                                                                                    )}
-                                                                                </div>
-                                                                                <div className="text-sm text-gray-600">{p.surgeryMethod}</div>
-                                                                                {p.surgeonName && <div className="text-xs text-indigo-600 font-bold mt-1">BS: {p.surgeonName}</div>}
-                                                                             </div>
-                                                                             <div className="absolute bottom-3 right-3 flex gap-2">
-                                                                                 <button
-                                                                                     onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }}
-                                                                                     className="text-sm px-3 py-2 rounded-lg font-bold bg-gray-100 text-gray-500 hover:bg-orange-200 hover:text-orange-600 active:scale-95 transition-all shadow-sm"
-                                                                                 >
-                                                                                     Sửa
-                                                                                 </button>
-                                                                                 <button
-                                                                                     onClick={() => {
-                                                                                         if (window.confirm('Hủy ca mổ đã xếp cho bệnh nhân này? Ca sẽ được đưa ra khỏi danh sách lịch mổ.')) {
-                                                                                             handleCancelSurgery(p.id);
-                                                                                         }
-                                                                                     }}
-                                                                                     className="text-sm px-3 py-2 rounded-lg font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 active:scale-95 transition-all"
-                                                                                 >
-                                                                                    Hủy ca
-                                                                                </button>
+                                                                <div className="p-3 space-y-5">
+                                                                    {Object.entries(
+                                                                        [...list]
+                                                                            .sort((a, b) => {
+                                                                                const dateA = normalizeDateString(a.surgeryDate);
+                                                                                const dateB = normalizeDateString(b.surgeryDate);
+                                                                                if (dateA === dateB) {
+                                                                                    return (a.surgeryTime || '').localeCompare(b.surgeryTime || '');
+                                                                                }
+                                                                                if (!dateA) return 1;
+                                                                                if (!dateB) return -1;
+                                                                                return dateA.localeCompare(dateB);
+                                                                            })
+                                                                            .reduce<Record<string, Patient[]>>((acc, patient) => {
+                                                                               const key = normalizeDateString(patient.surgeryDate) || 'unknown';
+                                                                               (acc[key] = acc[key] || []).push(patient);
+                                                                               return acc;
+                                                                           }, {})
+                                                                    ).sort((a, b) => {
+                                                                        if (a[0] === 'unknown') return 1;
+                                                                        if (b[0] === 'unknown') return -1;
+                                                                        return a[0].localeCompare(b[0]);
+                                                                    }).map(([dateKey, patientsForDate]) => (
+                                                                        <div key={`${key}-${dateKey}`}>
+                                                                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wide px-1 mb-2">
+                                                                                <Calendar size={14} className="text-orange-400" />
+                                                                                <span>{formatSurgeryDateLabel(dateKey, groupKey)}</span>
+                                                                            </div>
+                                                                            <div className="space-y-3">
+                                                                                {patientsForDate.map(p => {
+                                                                                    const timeLabel = formatSurgeryTime(p.surgeryTime) || '--:--';
+                                                                                    const hour = p.surgeryTime && p.surgeryTime.includes(':') ? parseInt(p.surgeryTime.split(':')[0], 10) : null;
+                                                                                    const isAfternoon = hour !== null && hour >= 12;
+                                                                                    const roomLabel = (p.operatingRoom || p.roomNumber || '').trim();
+                                                                                    return (
+                                                                                        <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-gray-100 relative">
+                                                                                            <div className="flex flex-col items-center justify-center w-14 border-r border-gray-100 pr-3">
+                                                                                                <span className={`text-xl font-bold ${isAfternoon ? 'text-blue-500' : 'text-orange-500'}`}>{timeLabel}</span>
+                                                                                            </div>
+                                                                                            <div className="flex-1">
+                                                                                                <div className="font-bold text-slate-800 flex items-center gap-2 flex-wrap">
+                                                                                                    <span>{p.fullName}</span>
+                                                                                                    {typeof p.age === 'number' && p.age > 0 && (
+                                                                                                        <span className="text-[11px] font-bold text-slate-500 bg-white/60 px-1.5 py-0.5 rounded-md border border-slate-200/50">{p.age}t</span>
+                                                                                                    )}
+                                                                                                    {roomLabel && (
+                                                                                                        <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">{roomLabel}</span>
+                                                                                                    )}
+                                                                                                    {isServicePatientToday(p) && (
+                                                                                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">DV hôm nay</span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <div className="text-sm text-gray-600">{p.surgeryMethod}</div>
+                                                                                                {p.surgeonName && <div className="text-xs text-indigo-600 font-bold mt-1">BS: {p.surgeonName}</div>}
+                                                                                            </div>
+                                                                                            <div className="absolute bottom-3 right-3 flex gap-2">
+                                                                                                <button
+                                                                                                    onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }}
+                                                                                                    className="text-sm px-3 py-2 rounded-lg font-bold bg-gray-100 text-gray-500 hover:bg-orange-200 hover:text-orange-600 active:scale-95 transition-all shadow-sm"
+                                                                                                >
+                                                                                                    Sửa
+                                                                                                </button>
+                                                                                                <button
+                                                                                                    onClick={() => {
+                                                                                                        if (window.confirm('Hủy ca mổ đã xếp cho bệnh nhân này? Ca sẽ được đưa ra khỏi danh sách lịch mổ.')) {
+                                                                                                            handleCancelSurgery(p.id);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className="text-sm px-3 py-2 rounded-lg font-bold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 active:scale-95 transition-all"
+                                                                                                >
+                                                                                                    Hủy ca
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
                                                                             </div>
                                                                         </div>
-                                                                    ); })}
+                                                                    ))}
                                                                 </div>
                                                             )}
                                                         </div>
