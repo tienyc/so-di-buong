@@ -37,6 +37,7 @@ function buildRoomLookup() {
   return { validRooms, roomLookup };
 }
 
+// Mặc định nếu không tìm được phòng
 const DEFAULT_ROOM = "Cấp cứu 1";
 
 /**
@@ -70,7 +71,7 @@ function normalizeAdmissionDate(
 
 /**
  * Chuẩn hoá phòng mổ: chỉ cho phép "1","7","8","9","10".
- * Nếu sai/không khớp → rỗng để layer trên xử lý tiếp.
+ * Nếu sai/không khớp → rỗng để UI xử lý.
  */
 const VALID_OR_ROOMS = ["1", "7", "8", "9", "10"];
 
@@ -92,6 +93,108 @@ function normalizeSurgeryTime(raw: string | undefined | null): string {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Helper: sinh PPPT từ chẩn đoán (ưu tiên nhóm dây chằng)          */
+/* ------------------------------------------------------------------ */
+
+function derivePPPTFromDiagnosis(diagnosis: string): string {
+  const text = diagnosis.toLowerCase();
+
+  // 1️⃣ NHÓM DÂY CHẰNG – ưu tiên xử lý trước
+  let ligamentLabel = "";
+
+  if (text.includes("dcct")) {
+    ligamentLabel = "DCCT";
+  } else if (text.includes("dccs")) {
+    ligamentLabel = "DCCS";
+  } else if (text.includes("dây chằng chéo trước")) {
+    ligamentLabel = "dây chằng chéo trước";
+  } else if (text.includes("dây chằng chéo sau")) {
+    ligamentLabel = "dây chằng chéo sau";
+  }
+
+  if (ligamentLabel) {
+    // Vị trí & bên cho dây chằng
+    let location = "";
+    if (text.includes("gối")) location = "gối";
+
+    let side = "";
+    if (text.includes("hai bên") || text.includes("2 bên")) {
+      side = "2 bên";
+    } else if (text.match(/\bbên trái\b/) || text.match(/\btrái\b/)) {
+      side = "T";
+    } else if (text.match(/\bbên phải\b/) || text.match(/\bphải\b/)) {
+      side = "P";
+    }
+
+    const parts = [`PTNS tái tạo ${ligamentLabel}`, location, side].filter(
+      Boolean
+    );
+    // Ví dụ: "PTNS tái tạo DCCT gối P"
+    return parts.join(" ");
+  }
+
+  // 2️⃣ CÁC NHÓM KHÁC (gãy, u, viêm, khuyết hổng...)
+  let base = "Phẫu thuật";
+
+  if (
+    text.includes("nẹp") ||
+    text.includes("vít") ||
+    text.includes("đinh") ||
+    text.includes("phương tiện")
+  ) {
+    base = "PT Tháo phương tiện";
+  } else if (
+    text.includes("u ") ||
+    text.includes("u mỡ") ||
+    text.includes("nang") ||
+    text.includes("hạch") ||
+    text.includes("bướu")
+  ) {
+    base = "PT Bóc u";
+  } else if (
+    text.includes("viêm") ||
+    text.includes("nhiễm trùng") ||
+    text.includes("áp xe") ||
+    text.includes("hoại tử") ||
+    text.includes("hở")
+  ) {
+    base = "PT Nạo viêm";
+  } else if (text.includes("khuyết hổng") || text.includes("lộ xương")) {
+    base = "PT Chuyển vạt da";
+  } else if (text.includes("gãy cổ xương đùi")) {
+    base = "PT Thay khớp háng";
+  } else if (text.includes("gãy")) {
+    base = "PT KHX";
+  }
+
+  // Vị trí: CHỮ THƯỜNG vì nằm giữa câu: "PT KHX đùi T"
+  let location = "";
+  if (text.includes("cẳng chân")) location = "cẳng chân";
+  else if (text.includes("cẳng tay")) location = "cẳng tay";
+  else if (text.includes("cánh tay")) location = "cánh tay";
+  else if (text.includes("đùi")) location = "đùi";
+  else if (text.includes("vai")) location = "vai";
+  else if (text.includes("cổ tay")) location = "cổ tay";
+  else if (text.includes("bàn tay")) location = "bàn tay";
+  else if (text.includes("bàn chân")) location = "bàn chân";
+  else if (text.includes("gối")) location = "gối";
+
+  // Bên: T / P / 2 bên
+  let side = "";
+  if (text.includes("hai bên") || text.includes("2 bên")) {
+    side = "2 bên";
+  } else if (text.match(/\bbên trái\b/) || text.match(/\btrái\b/)) {
+    side = "T";
+  } else if (text.match(/\bbên phải\b/) || text.match(/\bphải\b/)) {
+    side = "P";
+  }
+
+  const parts = [base, location, side].filter(Boolean);
+  // Ví dụ: "PT KHX đùi T", "PT Nạo viêm cẳng chân P"
+  return parts.join(" ");
+}
+
+/* ------------------------------------------------------------------ */
 /*  1. Dùng AI để phân tích text nhập bệnh nhân                       */
 /* ------------------------------------------------------------------ */
 
@@ -110,95 +213,149 @@ export const parsePatientInput = async (inputText: string) => {
     const now = new Date();
     const currentDate = now.toLocaleDateString("vi-VN");
     const todayISO = now.toISOString().split("T")[0];
+    const workingDate = todayISO;
 
     const { validRooms, roomLookup } = buildRoomLookup();
     const roomWardMapping = getRoomWardMappingForPrompt();
+    const allowedRooms = ["1", "7", "8", "9", "10"];
+
+    // Placeholder for patientsToSchedule - should be populated from actual data
+    const patientsToSchedule: any[] = [];
+    const scheduledForContext: any[] = [];
 
     const prompt = `
-Bạn là AI chuyên phân tích danh sách bệnh nhân trong ứng dụng y tế SmartRound.
+I. VAI TRÒ
+Bạn là AI điều phối lịch mổ Chấn thương chỉnh hình.
 
-**NHIỆM VỤ:**
-Phân tích văn bản không có cấu trúc (có thể 1 hoặc nhiều bệnh nhân) và trả về MẢNG JSON theo schema.
+II. NGÀY LÀM VIỆC
+- Ngày đang cần xếp lịch: ${workingDate} (YYYY-MM-DD)
+- Các ca trong "List A" mặc định sẽ được xếp trong ngày này.
+- "List B" là các ca đã xếp (có thể ở ngày khác), dùng để tham khảo pattern phân bố.
 
-**NGÀY HIỆN TẠI:** ${currentDate} (${todayISO})
+III. DỮ LIỆU
+1. List A (Cần xếp trong ngày ${workingDate}):
+${JSON.stringify(patientsToSchedule)}
 
-**QUY TẮC PHÂN TÍCH:**
+2. List B (Đã xếp trước đó - context):
+${JSON.stringify(scheduledForContext)}
 
-1️⃣ Họ tên (fullName):
-   - Viết hoa chữ cái đầu mỗi từ
-   - Loại bỏ số thứ tự: "1. Nguyễn Văn A" → "Nguyễn Văn A"
-   - Ví dụ: "anh tùng" → "Anh Tùng"
+3. Khung giờ & Phòng mổ:
+- Buổi sáng: 08:00–11:30
+- Buổi chiều: 13:30–17:00
+- Phòng mổ hợp lệ: ${allowedRooms.join(", ")}
 
-2️⃣ Tuổi (age):
-   - Tìm số kèm: "45t", "45T", "45 tuổi", "t45"
-   - Hoặc số 2 chữ số (10-99) đứng sau tên, không phải ngày tháng
-   - Không tìm thấy → 0
+IV. CHUẨN HÓA PPPT & THỜI LƯỢNG
 
-3️⃣ Giới tính (gender):
-   - Nam: "nam", "n", "m", "ông", "anh", "bác" (nam)
-   - Nữ: "nữ", "nu", "f", "bà", "chị", "cô"
-   - Không rõ → ""
+BƯỚC 1: CHUẨN HÓA PPPT
+Tạo trường "PPPT" từ chẩn đoán:
 
-4️⃣ ⚠️ PHÒNG (roomNumber):
-   - Nếu trong text có ghi phòng (B1, B2, B8, Hồi sức, Cấp cứu 1, DV1, v.v.) thì hãy trích ra.
-   - Khi trả về JSON, roomNumber CHỈ được dùng một trong các giá trị sau (đúng chính tả như bên dưới):
-     ${validRooms.map((r) => `"${r}"`).join(", ")}
+[TÊN CƠ BẢN] + " " + [VỊ TRÍ & BÊN]
 
-   - Không được sáng tạo thêm tên phòng mới.
-   - Nếu không tìm thấy phòng nào phù hợp trong input → roomNumber = "${DEFAULT_ROOM}".
+1. [TÊN CƠ BẢN] (ưu tiên từ trên xuống):
+- Nếu chẩn đoán chứa "Nẹp", "Vít", "Đinh", "Phương tiện" → "PT Tháo phương tiện"
+- Nếu chứa "U", "Nang", "Hạch", "Bướu" → "PT Bóc u"
+- Nếu chứa "Viêm", "Nhiễm trùng", "Áp xe", "Hoại tử", "Hở" → "PT Nạo viêm"
+- Nếu chứa "Khuyết hổng", "Lộ xương" → "PT Chuyển vạt da"
+- Nếu chứa "Gãy cổ xương đùi" → "PT Thay khớp háng"
+- Nếu chứa "Gãy" (các vị trí khác) → "PT KHX"
+- Nếu chứa "Dây chằng" → "PTNS tái tạo dây chằng"
+- Không thuộc các nhóm trên → "Phẫu thuật"
 
-5️⃣ ⚠️ KHU (ward):
-   - Bạn có thể để ward rỗng hoặc bỏ qua trong JSON.
-   - Backend sẽ tự map ward từ roomNumber theo bảng sau:
-${roomWardMapping}
+2. [VỊ TRÍ & BÊN]:
+- Vị trí: Đùi, Cẳng chân, Cánh tay, Cẳng tay, Vai, Cổ tay, Ngón...
+- Bên: "T", "P", "2 bên".
+- Ví dụ:
+  - "Gãy kín 1/3 giữa xương đùi T" → "PT KHX Đùi T"
+  - "U mỡ vùng bả vai P" → "PT Bóc u vai P"
+  - "Nhiễm trùng vết mổ cẳng chân" → "PT Nạo viêm cẳng chân"
 
-6️⃣ Chẩn đoán (diagnosis):
-   - Tên bệnh: gãy, trật, viêm, u, áp xe, nhiễm trùng...
-   - Vị trí: đùi, chân, bàn chân, ngón tay...
-   - Viết hoa chữ cái đầu câu.
+BƯỚC 2: THỜI LƯỢNG (Duration)
+- 60 phút nếu PPPT chứa: "Thay khớp", "Chuyển vạt", "Dây chằng", "KHX".
+- 30 phút cho các trường hợp còn lại.
 
-7️⃣ Tình trạng (historySummary):
-   - Triệu chứng: đau, sưng, đỏ, sốt, khó thở...
-   - Diễn biến: tỉnh táo, tiếp xúc tốt, ăn uống được...
+V. PHÂN LOẠI ƯU TIÊN
+- Ưu tiên 1: ca Nhiễm trùng/Viêm → nên xếp **phòng 1** nếu có thể.
+- Ưu tiên 2: Đại phẫu 60 phút.
+- Ưu tiên 3: Tiểu phẫu 30 phút.
 
-8️⃣ Ngày vào viện (admissionDate):
-   - Nếu thấy: "23/11", "23-11", "Ngày 23", "hôm nay", "hôm qua"… → hãy suy luận và trả về dạng YYYY-MM-DD.
-   - Nếu KHÔNG thấy thông tin ngày → admissionDate = "${todayISO}".
+VI. LOGIC XẾP LỊCH TRONG NGÀY ${workingDate} – DÀN TRẢI THEO BUỔI
 
-**VÍ DỤ ĐÚNG:**
+Mục tiêu:
+- Không để phòng 7 quá tải trong khi 8–9–10 còn trống.
+- Hạn chế đẩy bệnh nhân xuống **buổi chiều** nếu **buổi sáng** ở phòng khác còn slot.
+- Ưu tiên phòng 7 và 8, nhưng **trong cùng một buổi** phải dàn trải giữa 7 và 8 trước khi dùng 9–10.
 
-Input: "Nguyễn Văn B, 45t, gãy xương đùi, phòng B2"
-Output: [{
-  "fullName": "Nguyễn Văn B",
-  "age": 45,
-  "gender": "Nam",
-  "roomNumber": "B2",
-  "diagnosis": "Gãy xương đùi",
-  "historySummary": "",
-  "admissionDate": "${todayISO}"
-}]
+1. Khái niệm:
+- Mỗi (phòng, buổi) là một "dây chuyền" riêng:
+  - 1_sáng, 1_chiều, 7_sáng, 7_chiều, 8_sáng, 8_chiều, 9_sáng, 9_chiều, 10_sáng, 10_chiều.
+- Chỉ xếp ca trong ngày ${workingDate}. Không vắt ca sang ngày khác.
 
-Input: "Bà Lan 67t, Hậu phẫu, Hôm qua nhập viện"
-Output: [{
-  "fullName": "Bà Lan",
-  "age": 67,
-  "gender": "Nữ",
-  "roomNumber": "${DEFAULT_ROOM}",
-  "diagnosis": "Hậu phẫu",
-  "historySummary": "",
-  "admissionDate": "YYYY-MM-DD tương ứng hôm qua"
-}]
+2. Thứ tự xếp:
+- Duyệt bệnh nhân theo mức độ ưu tiên: Ưu tiên 1 → 2 → 3 (trong mỗi nhóm, giữ nguyên thứ tự nhập).
+- Với từng bệnh nhân, thực hiện lần lượt:
 
-**INPUT TEXT:**
-"${inputText}"
+  2.1. THỬ BUỔI SÁNG TRƯỚC:
+    a. Nếu là ca nhiễm trùng:
+       - Cố gắng xếp **phòng 1 buổi sáng** nếu còn slot (08:00–11:30, không trùng ca phòng 1).
+       - Nếu phòng 1 sáng không còn slot, cho phép dùng phòng 1 buổi chiều theo logic ở mục "Buổi chiều" bên dưới.
 
-**LƯU Ý QUAN TRỌNG:**
-- LUÔN trả về mảng JSON, dù chỉ có 1 bệnh nhân.
-- roomNumber: CHỈ chọn từ danh sách có sẵn, hoặc "${DEFAULT_ROOM}" nếu không tìm được.
-- ward: không bắt buộc, backend sẽ bỏ qua và tự map lại từ roomNumber.
-- Không thêm field nào khác ngoài: fullName, age, gender, diagnosis, roomNumber, historySummary, admissionDate.
+    b. Nếu là ca sạch (không nhiễm trùng):
+       - ƯU TIÊN SÁNG, và trong buổi sáng:
+         i. Đầu tiên xét **phòng 7 và 8 buổi sáng**:
+            - Với mỗi phòng (7_sáng, 8_sáng):
+              • Tính thời điểm bắt đầu sớm nhất có thể trong khoảng 08:00–11:30.
+              • Không được trùng giờ với ca đã xếp trong phòng đó.
+              • Ca không được vắt qua 11:30.
+            - Trong các slot hợp lệ của 7_sáng và 8_sáng:
+              • Chọn phương án có **giờ kết thúc sớm nhất**.
+              • Nếu hoà, chọn phòng có **ít ca hơn trong buổi sáng**.
+              • Nếu còn hoà, chọn phòng có số nhỏ hơn.
+
+         ii. Chỉ khi **không còn slot hợp lệ ở 7_sáng và 8_sáng**:
+            - Mới xét tiếp **phòng 9_sáng và 10_sáng** theo nguyên tắc tương tự:
+              • Tìm slot sớm nhất không trùng, không vắt qua 11:30.
+              • Chọn phương án kết thúc sớm nhất, ít ca hơn, số phòng nhỏ hơn (9 trước 10).
+       - Nếu **bất kỳ phòng nào trong 7,8,9,10 buổi sáng còn slot hợp lệ**, phải xếp vào BUỔI SÁNG
+         (không được đẩy sang buổi chiều).
+
+  2.2. CHỈ KHI MỌI PHÒNG 7–8–9–10 BUỔI SÁNG ĐỀU KHÔNG CÒN SLOT:
+    - Mới bắt đầu xếp sang BUỔI CHIỀU (13:30–17:00) cho ngày ${workingDate}.
+
+    - Quy tắc cho BUỔI CHIỀU:
+      a. Ca nhiễm trùng:
+         - Ưu tiên phòng 1 buổi chiều (1_chiều): tìm slot sớm nhất 13:30–17:00, không trùng, không vắt qua 17:00.
+      b. Ca sạch:
+         - Áp dụng thứ tự phòng **7,8 trước, sau đó 9,10** trong BUỔI CHIỀU:
+           • Bước 1: xét 7_chiều và 8_chiều → chọn slot hợp lệ kết thúc sớm nhất, ưu tiên dây chuyền ít ca hơn.
+           • Nếu không còn slot ở 7_chiều và 8_chiều → xét 9_chiều, 10_chiều tương tự.
+
+3. Quy tắc kiểm tra xung đột:
+- Một ca được xem là trùng nếu khoảng [Start, End) của nó giao nhau (overlap) với bất kỳ ca nào đã được xếp
+  trong cùng phòng và cùng ngày ${workingDate}.
+- Không được vắt ca qua:
+  - Buổi sáng: KHÔNG vắt quá 11:30.
+  - Buổi chiều: KHÔNG vắt quá 17:00.
+- Không xếp ca vào khoảng 11:30–13:30.
+
+4. Tuyệt đối KHÔNG được dồn tất cả ca sạch vào duy nhất một phòng rồi mới dùng phòng khác.
+- Ví dụ sai: xếp lần lượt 7_sáng đầy, 7_chiều đầy, rồi mới bắt đầu dùng 8_sáng.
+- Cách làm đúng: nếu 7_sáng vẫn còn ca nhưng 8_sáng đang trống, thì nên dàn trải sang 8_sáng trước khi đẩy ca xuống chiều.
+
+VII. ĐỊNH DẠNG ĐẦU RA
+Trả về mảng JSON, mỗi phần tử:
+
+{
+  "id": "id của bệnh nhân từ List A",
+  "PPPT": "Theo chuẩn BƯỚC 1",
+  "operatingRoom": "1 hoặc 7 hoặc 8 hoặc 9 hoặc 10",
+  "surgeryTime": "HH:mm (giờ bắt đầu)",
+  "surgeonName": "Tên phẫu thuật viên (có thể rỗng)",
+  "surgeryDate": "${workingDate}"
+}
+
+- "surgeryDate" LUÔN ở dạng YYYY-MM-DD và trong hầu hết trường hợp là "${workingDate}".
+- Không thêm field nào khác ngoài các field này.
 `;
-
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
@@ -324,15 +481,16 @@ Return ONLY a JSON array of strings.`,
 };
 
 /* ------------------------------------------------------------------ */
-/*  4. Dùng AI gợi ý lịch mổ (có chuẩn hoá phòng mổ & giờ)            */
+/*  4. Dùng AI gợi ý lịch mổ (AI lo phòng/giờ, PPPT tự sinh từ Dx)    */
 /* ------------------------------------------------------------------ */
 
 type AIScheduleRaw = {
   id?: string;
-  PPPT?: string;
   operatingRoom?: string;
   surgeryTime?: string;
   surgeonName?: string;
+  // PPPT từ AI không bắt buộc vì ta tự sinh từ chẩn đoán
+  PPPT?: string;
 };
 
 export const generateSurgerySchedule = async (
@@ -346,6 +504,12 @@ export const generateSurgerySchedule = async (
       diagnosis: p.diagnosis,
     }));
 
+    // Lookup chẩn đoán theo id để sinh PPPT
+    const diagnosisById = new Map<string, string>();
+    for (const p of patientsToSchedule) {
+      diagnosisById.set(p.id, p.diagnosis || "");
+    }
+
     const scheduledForContext = alreadyScheduled.map((p) => ({
       id: p.id,
       operatingRoom: p.operatingRoom,
@@ -355,72 +519,42 @@ export const generateSurgerySchedule = async (
 
     if (patientsToSchedule.length === 0) return [];
 
+    const patientsJson = JSON.stringify(patientsToSchedule);
+    const scheduledJson = JSON.stringify(scheduledForContext);
+
     const prompt = `
 I. VAI TRÒ
 Bạn là AI điều phối lịch mổ Chấn thương chỉnh hình.
-
 II. DỮ LIỆU
-1. List A (Cần xếp): ${JSON.stringify(patientsToSchedule)}
-2. List B (Đã xếp): ${JSON.stringify(scheduledForContext)}
+1. List A (Cần xếp): ${patientsJson}
+2. List B (Đã xếp): ${scheduledJson}
 3. Tài nguyên:
    - Buổi sáng: 08:00-11:30
    - Buổi chiều: 13:30-17:00
    - Phòng mổ hợp lệ: "1", "7", "8", "9", "10" (output phải đúng các chuỗi này, không thêm phòng khác).
 
-III. QUY TRÌNH XỬ LÝ (LOGIC CỐT LÕI)
+III. QUY TẮC XỬ LÝ (TÓM TẮT)
+1. Ước lượng thời lượng:
+   - 60 phút nếu là các ca lớn (thay khớp, chuyển vạt, gãy xương dài, dây chằng...).
+   - 30 phút cho các ca còn lại.
+2. Phân loại sạch / nhiễm:
+   - Nhiễm trùng/viêm/áp xe -> ưu tiên Phòng 1.
+   - Ca sạch → ưu tiên lấp đầy 7,8 rồi mới đến 9,10.
+3. Xếp lịch:
+   - Không cho trùng khoảng thời gian với List B cùng phòng.
+   - Không trùng với các ca A đã xếp trước.
+   - Không vắt qua trưa (11:30-13:30).
 
-BƯỚC 1: CHUẨN HÓA PPPT & THỜI GIAN (BẮT BUỘC CHÍNH XÁC)
-Bạn phải tạo ra trường 'PPPT' theo công thức ghép chuỗi sau:
-**Công thức:** \`[TÊN CƠ BẢN] + " " + [VỊ TRÍ & BÊN]\`
+IV. ĐẦU RA
+- Bạn KHÔNG cần tự suy luận PPPT.
+- CHỈ cần đề xuất phòng mổ và giờ mổ cho từng id trong List A.
+- Nếu không xếp được slot hợp lệ, hãy trả operatingRoom = "" và surgeryTime = "".
 
-1. Quy tắc xác định [TÊN CƠ BẢN] (Ưu tiên từ trên xuống):
-   - Nếu chứa "Nẹp", "Vít", "Đinh", "Phương tiện" -> "PT Tháo phương tiện"
-   - Nếu chứa "U", "Nang", "Hạch", "Bướu" -> "PT Bóc u"
-   - Nếu chứa "Viêm", "Nhiễm trùng", "Áp xe", "Hoại tử", "Hở" -> "PT Nạo viêm"
-   - Nếu chứa "Khuyết hổng", "Lộ xương" -> "PT Chuyển vạt da"
-   - Nếu chứa "Gãy cổ xương đùi" -> "PT Thay khớp háng"
-   - Nếu chứa "Gãy" (các vị trí khác) -> "PT KHX"
-   - Nếu chứa "Dây chằng chéo trước ", "DCCT", "DCCS" -> "PTNS tái tạo" "dây chằng chéo trước" hoặc " DCCT", "DCCS".
-   - Không thuộc các nhóm trên -> "Phẫu thuật"
-
-2. Quy tắc trích xuất [VỊ TRÍ & BÊN]:
-   - Tìm từ chỉ vị trí: đùi, cẳng chân, cánh tay, cẳng tay, vai, cổ tay, ngón...
-   - Viết thường không viết hoa các từ chỉ vị trí
-   - Tìm từ chỉ bên: "T" (Trái), "P" (Phải), "2 bên".
-   - Giữ nguyên chữ hoa/thường của T và P.
-
-3. Ví dụ mẫu:
-   - Input: "Gãy kín 1/3 giữa xương đùi T" -> Output PPPT: "PT KHX Đùi T"
-   - Input: "U mỡ vùng bả vai P" -> Output PPPT: "PT Bóc u vai P"
-   - Input: "Nhiễm trùng vết mổ cẳng chân" -> Output PPPT: "PT Nạo viêm cẳng chân"
-
-4. Xác định Duration (Thời lượng):
-   - 60 phút: nếu PPPT chứa "Thay khớp", "Chuyển vạt", "Dây chằng", "KHX".
-   - 30 phút: các trường hợp còn lại.
-   (Áp dụng quy tắc tính Duration này cho cả List A và List B để tính khoảng bận).
-
-BƯỚC 2: PHÂN LOẠI ƯU TIÊN (Priority)
-1. Ưu tiên 1 (Nhiễm trùng/Viêm): Bắt buộc xếp Phòng 1.
-2. Ưu tiên 2 (Đại phẫu 60p): Xếp sau.
-3. Ưu tiên 3 (Tiểu phẫu 30p): Xếp cuối.
-
-BƯỚC 3: XẾP LỊCH & CHECK XUNG ĐỘT
-Duyệt từng ca A tìm Slot trống:
-1. Phân tầng phòng:
-   - Ca Nhiễm trùng -> Chỉ Phòng 1.
-   - Ca Sạch -> Ưu tiên lấp đầy Phòng 7, 8. Nếu kín mới sang 9, 10.
-2. Luật Check Trùng (Collision Check):
-   - Slot [Start, End] KHÔNG ĐƯỢC trùng phút nào với List B tại phòng đó.
-   - KHÔNG ĐƯỢC trùng với các ca A đã xếp trước đó.
-   - KHÔNG ĐƯỢC vắt qua trưa (11:30-13:30).
-3. Nếu không tìm được slot hợp lệ cho một ca, bạn vẫn trả ca đó với operatingRoom = "" và surgeryTime = "" (để backend biết là chưa xếp được).
-
-IV. ĐỊNH DẠNG ĐẦU RA
+V. ĐỊNH DẠNG JSON
 Trả về MẢNG JSON:
 [
   {
-    "id": "...",              // id bệnh nhân tương ứng
-    "PPPT": "Theo chuẩn ở Bước 1",
+    "id": "...",                    // id bệnh nhân tương ứng
     "operatingRoom": "1|7|8|9|10 hoặc rỗng nếu không xếp được",
     "surgeryTime": "HH:mm hoặc rỗng nếu không xếp được",
     "surgeonName": "Tên phẫu thuật viên gợi ý hoặc rỗng"
@@ -438,12 +572,12 @@ Trả về MẢNG JSON:
             type: Type.OBJECT,
             properties: {
               id: { type: Type.STRING },
-              PPPT: { type: Type.STRING },
               operatingRoom: { type: Type.STRING },
               surgeryTime: { type: Type.STRING },
               surgeonName: { type: Type.STRING },
+              PPPT: { type: Type.STRING },
             },
-            required: ["id", "PPPT", "operatingRoom", "surgeryTime"],
+            required: ["id", "operatingRoom", "surgeryTime"],
           },
         },
       },
@@ -452,14 +586,19 @@ Trả về MẢNG JSON:
     const raw = safeJsonParse<AIScheduleRaw[]>(response.text, []);
 
     const cleaned = raw
-      .filter((s) => s && s.id && s.PPPT)
+      .filter((s) => s && s.id)
       .map((s) => {
         const operatingRoom = normalizeOperatingRoom(s.operatingRoom);
         const surgeryTime = normalizeSurgeryTime(s.surgeryTime);
 
+        const originalDx = diagnosisById.get(s.id!) || "";
+        const finalPPPT = originalDx
+          ? derivePPPTFromDiagnosis(originalDx)
+          : (s.PPPT || "").trim() || "Phẫu thuật";
+
         return {
           id: s.id as string,
-          PPPT: s.PPPT!.trim(),
+          PPPT: finalPPPT,
           operatingRoom, // chỉ "1|7|8|9|10" hoặc ""
           surgeryTime, // "HH:mm" hoặc ""
           surgeonName: (s.surgeonName ?? "").trim(),

@@ -81,6 +81,12 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
     }
     // ------------------------------------------
 
+    const formatOrderTagText = (val: any) => {
+        const text = safeString(val).trim();
+        if (text.length <= 28) return text;
+        return text.slice(0, 28).trimEnd() + '…';
+    };
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (!showMenu) return; 
@@ -105,6 +111,9 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         const d = normalizeDateString(safeString(o.executionDate));
         return d === todayStr;
     });
+    const orderTagLimit = 3;
+    const visibleOrderTags = todayOrders.slice(0, orderTagLimit);
+    const remainingOrderTagCount = Math.max(0, todayOrders.length - visibleOrderTags.length);
 
     const upcomingOrders = pendingOrders.filter(o => {
         const d = normalizeDateString(safeString(o.executionDate));
@@ -320,6 +329,29 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                             </div>
                         )}
                     </div>
+
+                    {visibleOrderTags.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                                <ClipboardList size={11} className="text-emerald-500" />
+                                Y lệnh
+                            </span>
+                            {visibleOrderTags.map(order => (
+                                <span
+                                    key={order.id}
+                                    className="inline-flex items-center max-w-[220px] truncate text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full"
+                                    title={safeString(order.content)}
+                                >
+                                    {formatOrderTagText(order.content)}
+                                </span>
+                            ))}
+                            {remainingOrderTagCount > 0 && (
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    +{remainingOrderTagCount}
+                                </span>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <button

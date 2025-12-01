@@ -88,12 +88,12 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
             {/* TABLE */}
             <div className="overflow-y-auto flex-1 custom-scrollbar bg-white">
                 <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-50 sticky top-0 z-10 text-gray-500 border-b border-gray-100">
+                    <thead className="bg-gray-50 sticky top-0 z-10 text-gray-600 border-b border-gray-100 text-sm">
                         <tr>
-                            <th className="px-2 py-2 text-[10px] font-bold uppercase w-8 text-center bg-gray-50">STT</th>
-                            <th className="px-2 py-2 text-[10px] font-bold uppercase w-[45%] bg-gray-50">Tên / Trạng thái</th>
-                            <th className="px-2 py-2 text-[10px] font-bold uppercase bg-gray-50">Chẩn đoán</th>
-                            <th className="px-2 py-2 text-[10px] font-bold uppercase bg-gray-50 w-[28%]">Y lệnh hôm nay</th>
+                            <th className="px-2 py-2 text-xs font-bold uppercase w-8 text-center bg-gray-50">STT</th>
+                            <th className="px-2 py-2 text-xs font-bold uppercase w-[45%] bg-gray-50">Tên / Trạng thái</th>
+                            <th className="px-2 py-2 text-xs font-bold uppercase bg-gray-50">Chẩn đoán</th>
+                            <th className="px-2 py-2 text-xs font-bold uppercase bg-gray-50 w-[28%]">Y lệnh hôm nay</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -108,7 +108,7 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
                                     className="hover:bg-blue-50/60 active:bg-blue-100 transition-colors cursor-pointer"
                                 >
                                     {/* STT */}
-                                    <td className="px-2 py-2.5 text-xs font-medium text-gray-400 text-center align-top pt-3">
+                                    <td className="px-2 py-2.5 text-sm font-semibold text-gray-500 text-center align-top pt-3">
                                         {index + 1}
                                     </td>
 
@@ -117,10 +117,10 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
                                         <div className="flex flex-col justify-start">
                                             {/* Dòng 1: Tên + (TuổiT) */}
                                             <div className="flex items-baseline gap-1">
-                                                <span className="text-sm font-bold text-slate-800 leading-tight">
+                                                <span className="text-base font-bold text-slate-800 leading-tight">
                                                     {patient.fullName}
                                                 </span>
-                                                <span className="text-xs text-gray-500 font-normal">
+                                                <span className="text-sm text-gray-500 font-normal">
                                                     ({patient.age}T)
                                                 </span>
                                             </div>
@@ -132,19 +132,19 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
 
                                     {/* CHẨN ĐOÁN */}
                                     <td className="px-2 py-2.5 align-top">
-                                        <p className="text-[11px] text-gray-600 leading-snug line-clamp-3 mt-0.5">
+                                        <p className="text-sm text-gray-600 leading-snug line-clamp-3 mt-0.5">
                                             {patient.diagnosis || "-"}
                                         </p>
                                     </td>
                                     <td className="px-2 py-2.5 align-top">
                                         {todayOrders.length === 0 ? (
-                                            <span className="text-[11px] text-gray-400">Không có</span>
+                                            <span className="text-sm text-gray-400">Không có</span>
                                         ) : (
                                             <div className="space-y-1">
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold text-blue-600 bg-blue-50 border border-blue-100">
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-100">
                                                     {todayOrders.length} y lệnh
                                                 </span>
-                                                <ul className="text-[11px] text-gray-600 space-y-1">
+                                                <ul className="text-sm text-gray-600 space-y-1">
                                                     {todayOrders.slice(0, 2).map(order => (
                                                         <li key={order.id} className="line-clamp-2">
                                                             • {order.content || 'Y lệnh'}
@@ -152,7 +152,7 @@ const PatientTableView: React.FC<PatientTableViewProps> = ({ patients, filterTit
                                                     ))}
                                                 </ul>
                                                 {todayOrders.length > 2 && (
-                                                    <span className="text-[10px] text-gray-400">
+                                                    <span className="text-xs text-gray-400">
                                                         +{todayOrders.length - 2} y lệnh khác
                                                     </span>
                                                 )}

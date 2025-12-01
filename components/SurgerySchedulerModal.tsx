@@ -1,19 +1,24 @@
+// components/SurgerySchedulerModal.tsx
+
 import React, { useState, useEffect } from "react";
 import { Patient } from "../types";
-import { Loader, X, Edit2, AlertTriangle, CheckSquare, Square } from "lucide-react";
+import {
+  Loader,
+  X,
+  Edit2,
+  AlertTriangle,
+  CheckSquare,
+  Square,
+} from "lucide-react";
 
-type AISuggestion = {
+export type AISuggestion = {
   id: string;
   PPPT: string;
-  operatingRoom: string; // "1" | "7" | "8" | "9" | "10"
+  operatingRoom: string;
   surgeryTime: string; // "HH:mm"
   surgeonName: string;
-  surgeryDate?: string; // YYYY-MM-DD (backend có thể thiếu, modal sẽ gán)
+  surgeryDate?: string; // YYYY-MM-DD
 };
-
-/* ----------------------- Cấu hình chung ----------------------- */
-
-const ALLOWED_ROOMS = ["1", "7", "8", "9", "10"];
 
 interface SurgerySchedulerModalProps {
   isOpen: boolean;
@@ -27,9 +32,9 @@ interface SurgerySchedulerModalProps {
 
 /* ----------------- Helpers cho logic trùng lịch ------------------- */
 
-// Quy tắc thời lượng: giống prompt Backend
+// Quy tắc thời lượng (khớp với frontend anh đang dùng)
 function getDurationMinutes(pppt: string): number {
-  const text = (pppt || "").toLowerCase();
+  const text = pppt.toLowerCase();
   if (
     text.includes("thay khớp") ||
     text.includes("chuyển vạt") ||
@@ -61,15 +66,6 @@ function minutesToTime(totalMinutes: number): string {
   return `${hours}:${minutes}`;
 }
 
-function formatDateVN(dateStr?: string): string {
-  if (!dateStr) return "--/--/----";
-  const iso = dateStr.includes("T") ? dateStr.split("T")[0] : dateStr;
-  const parts = iso.split("-");
-  if (parts.length !== 3) return dateStr;
-  const [y, m, d] = parts;
-  return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
-}
-
 type ConflictMap = Record<
   string,
   {
@@ -77,36 +73,33 @@ type ConflictMap = Record<
   }
 >;
 
-// Phát hiện trùng giữa các ca trong cùng modal (cùng phòng + cùng ngày)
+// Phát hiện trùng giữa các ca trong cùng modal (chỉ xét ca được chọn)
 function detectConflicts(schedule: AISuggestion[]): ConflictMap {
   const conflicts: ConflictMap = {};
 
   for (let i = 0; i < schedule.length; i++) {
     const a = schedule[i];
     const aRoom = a.operatingRoom?.trim();
-    const aDate = a.surgeryDate?.trim();
     const aStart = timeToMinutes(a.surgeryTime);
     const aDur = getDurationMinutes(a.PPPT);
     const aEnd = aStart !== null ? aStart + aDur : null;
 
-    if (!aRoom || !aDate || aStart === null || aEnd === null) continue;
+    if (!aRoom || aStart === null || aEnd === null) continue;
 
     for (let j = i + 1; j < schedule.length; j++) {
       const b = schedule[j];
       const bRoom = b.operatingRoom?.trim();
-      const bDate = b.surgeryDate?.trim();
       const bStart = timeToMinutes(b.surgeryTime);
       const bDur = getDurationMinutes(b.PPPT);
       const bEnd = bStart !== null ? bStart + bDur : null;
 
-      if (!bRoom || !bDate || bStart === null || bEnd === null) continue;
+      if (!bRoom || bStart === null || bEnd === null) continue;
+      if (aRoom !== bRoom) continue;
 
-      // Chỉ xét khi cùng phòng + cùng ngày
-      if (aRoom !== bRoom || aDate !== bDate) continue;
-
+      // Điều kiện giao nhau: [aStart, aEnd) vs [bStart, bEnd)
       const overlap = aStart < bEnd && bStart < aEnd;
       if (overlap) {
-        const reason = `Trùng phòng ${aRoom} và khoảng thời gian với ca khác (ngày ${aDate})`;
+        const reason = `Trùng phòng ${aRoom} và khoảng thời gian với ca khác`;
 
         if (!conflicts[a.id]) conflicts[a.id] = { reasons: [] };
         if (!conflicts[b.id]) conflicts[b.id] = { reasons: [] };
@@ -124,7 +117,6 @@ function detectConflicts(schedule: AISuggestion[]): ConflictMap {
 
 type EditableSuggestion = AISuggestion & {
   selected: boolean;
-  surgeryDate: string; // trong modal luôn đảm bảo có
 };
 
 const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
@@ -136,10 +128,12 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
   onConfirm,
   doctors,
 }) => {
-  const [editableSchedule, setEditableSchedule] = useState<EditableSuggestion[]>([]);
+  const [editableSchedule, setEditableSchedule] = useState<EditableSuggestion[]>(
+    []
+  );
   const [conflicts, setConflicts] = useState<ConflictMap>({});
 
-  // Khởi tạo: mặc định chọn hết, phòng mổ chuẩn, ngày mổ = ngày mai nếu AI chưa trả
+  // Khởi tạo: mặc định chọn hết, ngày mổ = ngày mai nếu AI chưa trả
   useEffect(() => {
     if (!isOpen) return;
 
@@ -148,35 +142,34 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
     const tomorrowISO = tomorrow.toISOString().split("T")[0];
 
     setEditableSchedule(
-      (suggestedSchedule || []).map((item) => {
-        // Chuẩn hoá phòng mổ: nếu không thuộc 1,7,8,9,10 thì default 7
-        const room = ALLOWED_ROOMS.includes(item.operatingRoom?.trim())
-          ? item.operatingRoom.trim()
-          : "7";
-
-        return {
-          ...item,
-          operatingRoom: room,
-          surgeryDate: item.surgeryDate || tomorrowISO,
-          selected: true,
-        };
-      })
+      suggestedSchedule.map((item) => ({
+        ...item,
+        surgeryDate: item.surgeryDate || tomorrowISO,
+        selected: true,
+      }))
     );
   }, [suggestedSchedule, isOpen]);
 
-  // Mỗi khi editableSchedule thay đổi (AI mới hoặc bạn sửa tay) → tính lại conflict cho những ca được chọn
+  // Mỗi khi editableSchedule thay đổi → tính lại conflict cho những ca được chọn
   useEffect(() => {
-    const active = editableSchedule.filter((s) => s.selected);
+    const active = editableSchedule
+      .filter((s) => s.selected)
+      .map((s) => ({
+        id: s.id,
+        PPPT: s.PPPT,
+        operatingRoom: s.operatingRoom,
+        surgeryTime: s.surgeryTime,
+        surgeonName: s.surgeonName,
+        surgeryDate: s.surgeryDate,
+      }));
     setConflicts(detectConflicts(active));
   }, [editableSchedule]);
 
   if (!isOpen) return null;
 
-  const getPatientById = (id: string) => patients.find((p) => p.id === id);
-
   const handleScheduleChange = (
     id: string,
-    field: keyof AISuggestion | "surgeryDate",
+    field: keyof AISuggestion,
     value: string
   ) => {
     setEditableSchedule((currentSchedule) =>
@@ -194,6 +187,8 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
     );
   };
 
+  const getPatientById = (id: string) => patients.find((p) => p.id === id);
+
   const handleAdjustTime = (id: string, deltaMinutes: number) => {
     setEditableSchedule((currentSchedule) =>
       currentSchedule.map((item) => {
@@ -205,8 +200,9 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
     );
   };
 
-  const selectedItems = editableSchedule.filter((s) => s.selected);
   const hasConflicts = Object.keys(conflicts).length > 0;
+
+  const selectedItems = editableSchedule.filter((s) => s.selected);
 
   // Nhắc thiếu: chỉ xét các ca được chọn
   const hasMissingRequired = selectedItems.some(
@@ -223,7 +219,7 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
     }
 
     const warnings: string[] = [];
-    if (hasConflicts) warnings.push("- Có ca trùng phòng/giờ trong cùng ngày.");
+    if (hasConflicts) warnings.push("- Có ca trùng phòng/giờ.");
     if (hasMissingRequired)
       warnings.push("- Có ca thiếu Ngày mổ, Phòng mổ hoặc Giờ bắt đầu.");
 
@@ -238,20 +234,15 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
 
     // Chỉ gửi các ca được chọn, bỏ field selected khi trả ra
     const finalSchedule: AISuggestion[] = selectedItems.map(
-      ({ selected, surgeryDate, ...rest }) => ({
-        ...rest,
-        surgeryDate, // giữ lại ngày mổ
-      })
+      ({ selected, ...rest }) => rest
     );
 
     onConfirm(finalSchedule);
   };
 
-  const nothingSuggested = !isLoading && suggestedSchedule.length === 0;
-
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-200 sticky top-0 bg-white rounded-t-2xl z-10">
           <h2 className="font-bold text-lg text-blue-600">
@@ -279,12 +270,6 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
             </div>
           )}
 
-          {!isLoading && nothingSuggested && (
-            <div className="text-center py-16 text-gray-400">
-              <p>Không có bệnh nhân nào trong danh sách chờ mổ.</p>
-            </div>
-          )}
-
           {!isLoading && editableSchedule.length > 0 && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-lg text-sm mb-4 flex gap-3">
@@ -295,10 +280,12 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
                   </p>
                   <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
                     <li>Tích chọn các ca muốn xếp lịch trong đợt này.</li>
-                    <li>Chỉnh Ngày mổ, Phòng mổ, Giờ bắt đầu, PP phẫu thuật.</li>
                     <li>
-                      Hệ thống tự phát hiện trùng phòng/giờ trong cùng ngày và
-                      đánh dấu màu đỏ.
+                      Chỉnh Ngày mổ, Phòng mổ, Giờ bắt đầu, PP phẫu thuật,
+                      Phẫu thuật viên.
+                    </li>
+                    <li>
+                      Hệ thống tự phát hiện trùng phòng/giờ và đánh dấu màu đỏ.
                     </li>
                   </ul>
                 </div>
@@ -322,6 +309,8 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
 
               {editableSchedule.map((item, index) => {
                 const patient = getPatientById(item.id);
+                if (!patient) return null;
+
                 const conflictInfo = conflicts[item.id];
                 const isConflict = !!conflictInfo;
                 const isSelected = item.selected;
@@ -340,232 +329,215 @@ const SurgerySchedulerModal: React.FC<SurgerySchedulerModalProps> = ({
                         : "border-gray-200/80"
                     } ${!isSelected ? "opacity-60" : ""}`}
                   >
-                    {/* Nếu không tìm thấy bệnh nhân → hiển thị lỗi rõ ràng */}
-                    {!patient ? (
-                      <div className="flex items-start gap-2 text-xs text-red-700">
-                        <AlertTriangle size={16} className="mt-0.5" />
-                        <div>
-                          <div className="font-semibold">
-                            Không tìm thấy bệnh nhân tương ứng với id: {item.id}
-                          </div>
-                          <div>
-                            Vui lòng kiểm tra lại danh sách bệnh nhân hoặc chạy
-                            lại gợi ý AI.
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-start gap-3">
-                          {/* Checkbox chọn ca */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSelect(item.id)}
-                            className="mt-1 text-gray-600 hover:text-blue-600"
-                          >
-                            {isSelected ? (
-                              <CheckSquare size={20} />
-                            ) : (
-                              <Square size={20} />
-                            )}
-                          </button>
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox chọn ca */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSelect(item.id)}
+                        className="mt-1 text-gray-600 hover:text-blue-600"
+                      >
+                        {isSelected ? (
+                          <CheckSquare size={20} />
+                        ) : (
+                          <Square size={20} />
+                        )}
+                      </button>
 
+                      <div className="flex-1">
+                        <div className="flex items-baseline gap-3">
+                          <span className="text-lg font-bold text-blue-600">
+                            {index + 1}.
+                          </span>
                           <div className="flex-1">
-                            <div className="flex items-baseline gap-3">
-                              <span className="text-lg font-bold text-blue-600">
-                                {index + 1}.
+                            <div className="font-bold text-slate-800">
+                              {patient.fullName}{" "}
+                              <span className="font-normal text-gray-500">
+                                ({patient.age}T)
                               </span>
-                              <div className="flex-1">
-                                <div className="font-bold text-slate-800">
-                                  {patient.fullName}{" "}
-                                  <span className="font-normal text-gray-500">
-                                    ({patient.age}T)
-                                  </span>
-                                </div>
-                                <div className="text-xs text-gray-600 mt-0.5">
-                                  {patient.diagnosis}
-                                </div>
-                              </div>
-                              {/* Ngày mổ mini pill */}
+                            </div>
+                            <div className="text-xs text-gray-600 mt-0.5">
+                              {patient.diagnosis}
+                            </div>
+                          </div>
+                          {/* Ngày mổ mini pill */}
                           <div className="text-xs text-gray-500">
                             <span className="inline-flex items-center rounded-full border border-gray-300 px-2 py-0.5 bg-white">
                               Ngày mổ:&nbsp;
                               <span className="font-semibold text-gray-800">
-                                {formatDateVN(item.surgeryDate)}
+                                {item.surgeryDate}
                               </span>
                             </span>
                           </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mt-4 pl-4">
+                          <div className="col-span-2">
+                            <label className="text-xs font-bold text-gray-500">
+                              PP Phẫu thuật
+                            </label>
+                            <input
+                              type="text"
+                              value={item.PPPT}
+                              onChange={(e) =>
+                                handleScheduleChange(
+                                  item.id,
+                                  "PPPT",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-500">
+                              Phẫu thuật viên
+                            </label>
+                            <select
+                              value={item.surgeonName}
+                              onChange={(e) =>
+                                handleScheduleChange(
+                                  item.id,
+                                  "surgeonName",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
+                            >
+                              <option value="">Chọn phẫu thuật viên</option>
+                              {doctors.map((doc) => (
+                                <option key={doc} value={doc}>
+                                  {doc}
+                                </option>
+                              ))}
+                              {item.surgeonName &&
+                                !doctors.includes(item.surgeonName) && (
+                                  <option value={item.surgeonName}>
+                                    {item.surgeonName}
+                                  </option>
+                                )}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-500">
+                              Ngày mổ
+                            </label>
+                            <input
+                              type="date"
+                              value={item.surgeryDate || ""}
+                              onChange={(e) =>
+                                handleScheduleChange(
+                                  item.id,
+                                  "surgeryDate",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-500">
+                              Phòng mổ
+                            </label>
+                            <input
+                              type="text"
+                              value={item.operatingRoom}
+                              onChange={(e) =>
+                                handleScheduleChange(
+                                  item.id,
+                                  "operatingRoom",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-500">
+                              Giờ bắt đầu
+                            </label>
+                            <div className="flex items-center gap-2 mt-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleAdjustTime(item.id, -30)
+                                }
+                                className="px-2 py-1 text-xs font-bold border border-gray-300 rounded-md bg-white hover:bg-gray-100"
+                                title="Lùi 30 phút"
+                              >
+                                -30'
+                              </button>
+                              <input
+                                type="time"
+                                value={item.surgeryTime}
+                                onChange={(e) =>
+                                  handleScheduleChange(
+                                    item.id,
+                                    "surgeryTime",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full text-sm p-2 border border-gray-300 rounded-md"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleAdjustTime(item.id, 30)
+                                }
+                                className="px-2 py-1 text-xs font-bold border border-gray-300 rounded-md bg-white hover:bg-gray-100"
+                                title="Tiến 30 phút"
+                              >
+                                +30'
+                              </button>
                             </div>
-
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mt-4 pl-4">
-                              <div className="col-span-2">
-                                <label className="text-xs font-bold text-gray-500">
-                                  PP Phẫu thuật
-                                </label>
-                                <input
-                                  type="text"
-                                  value={item.PPPT}
-                                  onChange={(e) =>
-                                    handleScheduleChange(
-                                      item.id,
-                                      "PPPT",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs font-bold text-gray-500">
-                                  Phẫu thuật viên
-                                </label>
-                                <select
-                                  value={item.surgeonName}
-                                  onChange={(e) =>
-                                    handleScheduleChange(
-                                      item.id,
-                                      "surgeonName",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
-                                >
-                                  <option value="">Chọn phẫu thuật viên</option>
-                                  {doctors.map((doc) => (
-                                    <option key={doc} value={doc}>
-                                      {doc}
-                                    </option>
-                                  ))}
-                                  {item.surgeonName &&
-                                    !doctors.includes(item.surgeonName) && (
-                                      <option value={item.surgeonName}>
-                                        {item.surgeonName}
-                                      </option>
-                                    )}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="text-xs font-bold text-gray-500">
-                                  Ngày mổ
-                                </label>
-                                <input
-                                  type="date"
-                                  value={item.surgeryDate || ""}
-                                  onChange={(e) =>
-                                    handleScheduleChange(
-                                      item.id,
-                                      "surgeryDate",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-xs font-bold text-gray-500">
-                                  Phòng mổ
-                                </label>
-                                <select
-                                  value={item.operatingRoom}
-                                  onChange={(e) =>
-                                    handleScheduleChange(
-                                      item.id,
-                                      "operatingRoom",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full text-sm p-2 border border-gray-300 rounded-md mt-1"
-                                >
-                                  {ALLOWED_ROOMS.map((room) => (
-                                    <option key={room} value={room}>
-                                      {room}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="text-xs font-bold text-gray-500">
-                                  Giờ bắt đầu
-                                </label>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleAdjustTime(item.id, -30)
-                                    }
-                                    className="px-2 py-1 text-xs font-bold border border-gray-300 rounded-md bg-white hover:bg-gray-100"
-                                    title="Lùi 30 phút"
-                                  >
-                                    -30'
-                                  </button>
-                                  <input
-                                    type="time"
-                                    value={item.surgeryTime}
-                                    onChange={(e) =>
-                                      handleScheduleChange(
-                                        item.id,
-                                        "surgeryTime",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full text-sm p-2 border border-gray-300 rounded-md"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleAdjustTime(item.id, 30)
-                                    }
-                                    className="px-2 py-1 text-xs font-bold border border-gray-300 rounded-md bg-white hover:bg-gray-100"
-                                    title="Tiến 30 phút"
-                                  >
-                                    +30'
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Cảnh báo trùng lịch */}
-                            {isConflict && (
-                              <div className="mt-3 pl-4 text-xs text-red-600 flex items-start gap-2">
-                                <AlertTriangle size={14} className="mt-0.5" />
-                                <div>
-                                  <div className="font-semibold">
-                                    ⚠ Trùng lịch phòng/giờ với ca khác
-                                  </div>
-                                  {conflictInfo?.reasons.map((r, idx) => (
-                                    <div key={idx}>- {r}</div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Cảnh báo thiếu field bắt buộc */}
-                            {isMissing && (
-                              <div className="mt-2 pl-4 text-xs text-amber-600 flex items-start gap-2">
-                                <AlertTriangle size={14} className="mt-0.5" />
-                                <div>
-                                  <span className="font-semibold">
-                                    ⚠ Thiếu thông tin:
-                                  </span>{" "}
-                                  cần điền đủ Ngày mổ, Phòng mổ và Giờ bắt đầu
-                                  cho ca đã chọn.
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Gợi ý nếu không chọn ca này */}
-                            {!isSelected && (
-                              <div className="mt-2 pl-4 text-[11px] text-gray-500 italic">
-                                Ca này đang tạm bỏ qua trong đợt xếp lịch này.
-                              </div>
-                            )}
                           </div>
                         </div>
-                      </>
-                    )}
+
+                        {/* Cảnh báo trùng lịch */}
+                        {isConflict && (
+                          <div className="mt-3 pl-4 text-xs text-red-600 flex items-start gap-2">
+                            <AlertTriangle size={14} className="mt-0.5" />
+                            <div>
+                              <div className="font-semibold">
+                                ⚠ Trùng lịch phòng/giờ với ca khác
+                              </div>
+                              {conflictInfo.reasons.map((r, idx) => (
+                                <div key={idx}>- {r}</div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Cảnh báo thiếu field bắt buộc */}
+                        {isMissing && (
+                          <div className="mt-2 pl-4 text-xs text-amber-600 flex items-start gap-2">
+                            <AlertTriangle size={14} className="mt-0.5" />
+                            <div>
+                              <span className="font-semibold">
+                                ⚠ Thiếu thông tin:
+                              </span>{" "}
+                              cần điền đủ Ngày mổ, Phòng mổ và Giờ bắt đầu cho
+                              ca đã chọn.
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Gợi ý nếu không chọn ca này */}
+                        {!isSelected && (
+                          <div className="mt-2 pl-4 text-[11px] text-gray-500 italic">
+                            Ca này đang tạm bỏ qua trong đợt xếp lịch này.
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {!isLoading && suggestedSchedule.length === 0 && (
+            <div className="text-center py-16 text-gray-400">
+              <p>Không có bệnh nhân nào trong danh sách chờ mổ.</p>
             </div>
           )}
         </div>

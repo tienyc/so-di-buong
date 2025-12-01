@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { RoomBlock, Patient, AppView, MedicalOrder, PatientStatus, OrderStatus, OrderType } from './types'; 
 import { fetchAllData, savePatient, saveOrder, confirmDischarge, fetchSettings, deletePatient } from './services/api';
 import { generateSurgerySchedule } from './services/geminiService';
+import { autoScheduleLocally } from './services/localScheduler';
 import { buildRoomBlocksFromConfig, WardConfig } from './services/sheetMapping';
 import { syncSurgeryToKhoa, triggerHospitalSync } from './services/surgerySync';
 import PatientCard from './components/PatientCard';
@@ -13,7 +14,7 @@ import SettingsView from './components/SettingsView';
 import StatisticsView from './components/StatisticsView';
 import PatientTableView from './components/PatientTableView';
 import SurgerySchedulerModal from './components/SurgerySchedulerModal';
-import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays, Wand2, UploadCloud, FileText } from 'lucide-react';
+import { Stethoscope, Calendar, LayoutDashboard, Plus, Search, Settings as SettingsIcon, AlertCircle, LogOut, Filter, ChevronDown, ChevronUp, PieChart, Building, RefreshCw, Menu, Table as TableIcon, LayoutGrid, ChevronLeft, ChevronRight, X, CalendarDays, Wand2, UploadCloud, FileText, Lightbulb } from 'lucide-react';
 
 // --- HELPER FUNCTIONS ---
 const removeVietnameseTones = (str: string) => {
@@ -764,16 +765,27 @@ const App: React.FC = () => {
     };
 
     // --- AI SCHEDULER HANDLERS ---
-    const handleOpenSurgeryScheduler = async () => {
-        setIsScheduling(true);
-        setIsSurgerySchedulerModalOpen(true);
-        setSuggestedSchedule([]);
-
+    const buildExistingSurgeries = useCallback(() => {
         const scheduledPatients = [
             ...surgeryGroups.today,
             ...surgeryGroups.tomorrow,
             ...surgeryGroups.upcoming,
         ];
+        return scheduledPatients.map(p => ({
+            id: p.id,
+            operatingRoom: (p.operatingRoom || '').trim(),
+            surgeryTime: (p.surgeryTime || '').trim(),
+            PPPT: p.surgeryMethod || '',
+            diagnosis: p.diagnosis || ''
+        }));
+    }, [surgeryGroups.today, surgeryGroups.tomorrow, surgeryGroups.upcoming]);
+
+    const handleOpenSurgeryScheduler = async () => {
+        setIsScheduling(true);
+        setIsSurgerySchedulerModalOpen(true);
+        setSuggestedSchedule([]);
+
+        const scheduledPatients = buildExistingSurgeries();
         const result = await generateSurgerySchedule(unscheduledPatients, scheduledPatients);
         
         if (result && !result.error) {
@@ -782,6 +794,30 @@ const App: React.FC = () => {
              setNotification({ message: result.message || 'Lỗi khi sắp xếp lịch mổ.', type: 'error' });
              setIsSurgerySchedulerModalOpen(false);
         }
+        setIsScheduling(false);
+    };
+
+    const handleOpenLocalScheduler = () => {
+        if (unscheduledPatients.length === 0) {
+            setNotification({ message: 'Không có bệnh nhân cần xếp lịch.', type: 'error' });
+            return;
+        }
+        setIsScheduling(true);
+        setIsSurgerySchedulerModalOpen(true);
+        setSuggestedSchedule([]);
+
+        const scheduledPatients = buildExistingSurgeries();
+        const suggestions = autoScheduleLocally(unscheduledPatients, scheduledPatients);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowISO = tomorrow.toISOString().split('T')[0];
+
+        setSuggestedSchedule(
+            suggestions.map(item => ({
+                ...item,
+                surgeryDate: item.surgeryDate || tomorrowISO
+            }))
+        );
         setIsScheduling(false);
     };
 
@@ -1156,12 +1192,12 @@ const App: React.FC = () => {
                                              <div className="space-y-3">
                                                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                                                     <button 
-                                                        onClick={handleOpenSurgeryScheduler}
+                                                        onClick={handleOpenLocalScheduler}
                                                         disabled={isScheduling || unscheduledPatients.length === 0}
-                                                        className="w-full flex items-center justify-center gap-2 bg-white border border-blue-200 text-blue-600 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-sky-600 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-gray-50 hover:text-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
-                                                        <Wand2 size={18} />
-                                                        {isScheduling ? 'AI đang phân tích...' : 'Xếp lịch nhanh với AI'}
+                                                        <Lightbulb size={18} />
+                                                        Gợi ý Xếp lịch
                                                     </button>
                                                     <button 
                                                         onClick={handleScanServicePatients}
