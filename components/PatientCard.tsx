@@ -200,22 +200,20 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
     const isSevere = patient.isSevere;
 
     const isNewPatient = () => {
-        if (!admissionDateStr) return false;
         const entryStr = safeString(patient.roomEntryDate);
+        if (!entryStr) return false;
 
-        if (!entryStr) {
-            const adm = new Date(admissionDateStr);
-            const now = new Date();
-            const diff = (now.getTime() - adm.getTime()) / (1000 * 3600 * 24);
-            return diff <= 1.5; 
-        }
         const entry = new Date(entryStr);
         if (isNaN(entry.getTime())) return false;
 
-        const limitDate = new Date(entry);
-        limitDate.setDate(limitDate.getDate() + 1);
-        limitDate.setHours(23, 59, 59, 999);
-        return new Date() <= limitDate;
+        const windowStart = new Date(entry);
+        windowStart.setHours(0, 0, 0, 0);
+        const windowEnd = new Date(entry);
+        windowEnd.setDate(windowEnd.getDate() + 1);
+        windowEnd.setHours(23, 59, 59, 999);
+
+        const now = new Date();
+        return now >= windowStart && now <= windowEnd;
     };
     const isNew = isNewPatient();
 

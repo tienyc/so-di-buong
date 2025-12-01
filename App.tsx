@@ -102,6 +102,11 @@ const formatDayMonth = (isoDate?: string): string => {
     return `${day}/${month}`;
 };
 
+const roomTagCollator = new Intl.Collator("vi", {
+    numeric: true,
+    sensitivity: "base",
+});
+
 const getPatientRoomTag = (patient: Patient): string => {
     const source = (patient.roomNumber || patient.ward || '').trim();
     if (!source) return '';
@@ -125,6 +130,20 @@ const getPatientRoomTag = (patient: Patient): string => {
     if (words.length === 0) return source.slice(0, 4).toUpperCase();
     if (words.length === 1) return words[0].slice(0, 6).toUpperCase();
     return words.slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
+};
+
+const comparePatientsByRoomTag = (a: Patient, b: Patient): number => {
+    const tagA = getPatientRoomTag(a) || 'ZZZ';
+    const tagB = getPatientRoomTag(b) || 'ZZZ';
+    const primary = roomTagCollator.compare(tagA, tagB);
+    if (primary !== 0) return primary;
+    const fallbackRoomA = (a.roomNumber || '').toLowerCase();
+    const fallbackRoomB = (b.roomNumber || '').toLowerCase();
+    if (fallbackRoomA && fallbackRoomB) {
+        const second = roomTagCollator.compare(fallbackRoomA, fallbackRoomB);
+        if (second !== 0) return second;
+    }
+    return a.fullName.localeCompare(b.fullName, 'vi', { sensitivity: 'base' });
 };
 // --- END HELPER FUNCTIONS ---
 
@@ -551,7 +570,12 @@ const App: React.FC = () => {
             const targetBlock = rooms.find(b => b.id === targetRoomId);
             const p = rooms.flatMap(r => r.patients).find(pat => pat.id === selectedPatientId);
             if (p) {
-                const updatedP = { ...p, ward: targetBlock?.name || p.ward, roomNumber: targetRoomNumber || p.roomNumber };
+                const updatedP = {
+                    ...p,
+                    ward: targetBlock?.name || p.ward,
+                    roomNumber: targetRoomNumber || p.roomNumber,
+                    roomEntryDate: getTodayString(),
+                };
                 await savePatient(updatedP);
                 setNotification({ message: 'Đã chuyển phòng', type: 'success' });
                 loadDataFromSheet();
@@ -1400,6 +1424,7 @@ const App: React.FC = () => {
                                                 {rooms.map(block => {
                                                     const blockPatients = block.patients.filter(passesGlobalFilters);
                                                     if (blockPatients.length === 0) return null;
+                                                    const sortedBlockPatients = [...blockPatients].sort(comparePatientsByRoomTag);
                                                     
                                                     const isBlockExpanded = expandedBlocks[block.id];
                                                     const blockClass = 'bg-gradient-to-r from-blue-600 to-blue-400 shadow-lg';
@@ -1425,7 +1450,7 @@ const App: React.FC = () => {
 
                                                             {expandedBlocks[block.id] && (
                                                                 <div className="px-3 pb-3 pt-0">
-{blockPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelSurgery(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
+{sortedBlockPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelSurgery(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
                                                                 </div>
                                                             )}
                                                         </div>
