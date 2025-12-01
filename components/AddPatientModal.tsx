@@ -105,15 +105,21 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
     const handleAIImport = async () => {
         if (!importText.trim()) return;
         setIsProcessing(true);
-        const parsedPatients = await parsePatientInput(importText);
-        
-        if (parsedPatients && parsedPatients.length > 0) {
+        try {
+            const parsedPatients = await parsePatientInput(importText);
+            
+            if (!parsedPatients || parsedPatients.length === 0) {
+                setAiPreview(null);
+                setAiError('AI không nhận diện được bệnh nhân nào từ đoạn văn bản này. Hãy kiểm tra lại định dạng hoặc thử nhập rõ ràng hơn.');
+                return;
+            }
+
             const baseWard = rooms[0]?.name || 'Chưa xác định';
             const newPatients: Patient[] = parsedPatients.map((p: any) => ({
                 id: Math.random().toString(36).substr(2, 9),
                 fullName: p.fullName,
                 age: p.age || 0,
-                gender: 'Nam',
+                gender: p.gender || 'Nam',
                 roomNumber: p.roomNumber || FALLBACK_ROOM,
                 bedNumber: '',
                 admissionDate: p.admissionDate || new Date().toISOString().split('T')[0],
@@ -128,8 +134,13 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
             }));
             setAiPreview(newPatients);
             setAiError(null);
+        } catch (error) {
+            console.error('AI import error:', error);
+            setAiPreview(null);
+            setAiError('Có lỗi khi gọi AI. Vui lòng thử lại sau ít phút.');
+        } finally {
+            setIsProcessing(false);
         }
-        setIsProcessing(false);
     };
 
     const handleAcceptAi = () => {
@@ -320,6 +331,11 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                         value={importText}
                         onChange={(e) => setImportText(e.target.value)}
                     />
+                    {aiError && (
+                        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-2xl p-3">
+                            {aiError}
+                        </div>
+                    )}
                     {aiPreview && (
                         <div className="mt-4 bg-white rounded-2xl border border-blue-100 p-4 space-y-3">
                             <div className="flex justify-between items-center">

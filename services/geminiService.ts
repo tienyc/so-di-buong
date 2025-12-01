@@ -206,155 +206,47 @@ type RawPatient = {
   roomNumber?: string;
   historySummary?: string;
   admissionDate?: string;
+  ward?: string;
 };
 
 export const parsePatientInput = async (inputText: string) => {
   try {
     const now = new Date();
-    const currentDate = now.toLocaleDateString("vi-VN");
     const todayISO = now.toISOString().split("T")[0];
-    const workingDate = todayISO;
 
     const { validRooms, roomLookup } = buildRoomLookup();
     const roomWardMapping = getRoomWardMappingForPrompt();
-    const allowedRooms = ["1", "7", "8", "9", "10"];
-
-    // Placeholder for patientsToSchedule - should be populated from actual data
-    const patientsToSchedule: any[] = [];
-    const scheduledForContext: any[] = [];
 
     const prompt = `
-I. VAI TRÒ
-Bạn là AI điều phối lịch mổ Chấn thương chỉnh hình.
+Bạn là trợ lý điều dưỡng khoa Chấn thương chỉnh hình. Nhiệm vụ: từ đoạn nội dung bác sĩ cung cấp, hãy trích xuất danh sách bệnh nhân đang nằm viện.
 
-II. NGÀY LÀM VIỆC
-- Ngày đang cần xếp lịch: ${workingDate} (YYYY-MM-DD)
-- Các ca trong "List A" mặc định sẽ được xếp trong ngày này.
-- "List B" là các ca đã xếp (có thể ở ngày khác), dùng để tham khảo pattern phân bố.
+NGUYÊN TẮC CHUNG
+- Mỗi bệnh nhân phải có họ tên (viết hoa chữ cái đầu), tuổi (nếu thiếu → 0), chẩn đoán.
+- Nếu không thấy giới tính thì bỏ trống.
+- Nếu thiếu phòng, chọn một phòng hợp lệ từ danh sách bên dưới (ưu tiên phòng xuất hiện trong văn bản). Nếu vẫn chưa rõ, điền "Cấp cứu 1".
+- Ngày nhập viện nếu không đề cập → dùng hôm nay (${todayISO}).
+- Nếu trong một dòng có nhiều bệnh nhân, hãy tách thành nhiều phần tử.
 
-III. DỮ LIỆU
-1. List A (Cần xếp trong ngày ${workingDate}):
-${JSON.stringify(patientsToSchedule)}
+DANH SÁCH PHÒNG HỢP LỆ: ${validRooms.join(", ")}
+MAPPING PHÒNG → KHU:
+${roomWardMapping}
 
-2. List B (Đã xếp trước đó - context):
-${JSON.stringify(scheduledForContext)}
+VĂN BẢN CẦN PHÂN TÍCH:
+"""
+${inputText}
+"""
 
-3. Khung giờ & Phòng mổ:
-- Buổi sáng: 08:00–11:30
-- Buổi chiều: 13:30–17:00
-- Phòng mổ hợp lệ: ${allowedRooms.join(", ")}
+KẾT QUẢ:
+Trả về MẢNG JSON, mỗi phần tử gồm các trường:
+- fullName: string
+- age: number
+- gender: string (rỗng nếu không rõ)
+- diagnosis: string
+- roomNumber: string (chỉ các phòng hợp lệ ở trên hoặc "Cấp cứu 1")
+- historySummary: mô tả ngắn gọn nếu tìm thấy, nếu không thì rỗng
+- admissionDate: YYYY-MM-DD (nếu không có thì dùng ${todayISO})
 
-IV. CHUẨN HÓA PPPT & THỜI LƯỢNG
-
-BƯỚC 1: CHUẨN HÓA PPPT
-Tạo trường "PPPT" từ chẩn đoán:
-
-[TÊN CƠ BẢN] + " " + [VỊ TRÍ & BÊN]
-
-1. [TÊN CƠ BẢN] (ưu tiên từ trên xuống):
-- Nếu chẩn đoán chứa "Nẹp", "Vít", "Đinh", "Phương tiện" → "PT Tháo phương tiện"
-- Nếu chứa "U", "Nang", "Hạch", "Bướu" → "PT Bóc u"
-- Nếu chứa "Viêm", "Nhiễm trùng", "Áp xe", "Hoại tử", "Hở" → "PT Nạo viêm"
-- Nếu chứa "Khuyết hổng", "Lộ xương" → "PT Chuyển vạt da"
-- Nếu chứa "Gãy cổ xương đùi" → "PT Thay khớp háng"
-- Nếu chứa "Gãy" (các vị trí khác) → "PT KHX"
-- Nếu chứa "Dây chằng" → "PTNS tái tạo dây chằng"
-- Không thuộc các nhóm trên → "Phẫu thuật"
-
-2. [VỊ TRÍ & BÊN]:
-- Vị trí: Đùi, Cẳng chân, Cánh tay, Cẳng tay, Vai, Cổ tay, Ngón...
-- Bên: "T", "P", "2 bên".
-- Ví dụ:
-  - "Gãy kín 1/3 giữa xương đùi T" → "PT KHX Đùi T"
-  - "U mỡ vùng bả vai P" → "PT Bóc u vai P"
-  - "Nhiễm trùng vết mổ cẳng chân" → "PT Nạo viêm cẳng chân"
-
-BƯỚC 2: THỜI LƯỢNG (Duration)
-- 60 phút nếu PPPT chứa: "Thay khớp", "Chuyển vạt", "Dây chằng", "KHX".
-- 30 phút cho các trường hợp còn lại.
-
-V. PHÂN LOẠI ƯU TIÊN
-- Ưu tiên 1: ca Nhiễm trùng/Viêm → nên xếp **phòng 1** nếu có thể.
-- Ưu tiên 2: Đại phẫu 60 phút.
-- Ưu tiên 3: Tiểu phẫu 30 phút.
-
-VI. LOGIC XẾP LỊCH TRONG NGÀY ${workingDate} – DÀN TRẢI THEO BUỔI
-
-Mục tiêu:
-- Không để phòng 7 quá tải trong khi 8–9–10 còn trống.
-- Hạn chế đẩy bệnh nhân xuống **buổi chiều** nếu **buổi sáng** ở phòng khác còn slot.
-- Ưu tiên phòng 7 và 8, nhưng **trong cùng một buổi** phải dàn trải giữa 7 và 8 trước khi dùng 9–10.
-
-1. Khái niệm:
-- Mỗi (phòng, buổi) là một "dây chuyền" riêng:
-  - 1_sáng, 1_chiều, 7_sáng, 7_chiều, 8_sáng, 8_chiều, 9_sáng, 9_chiều, 10_sáng, 10_chiều.
-- Chỉ xếp ca trong ngày ${workingDate}. Không vắt ca sang ngày khác.
-
-2. Thứ tự xếp:
-- Duyệt bệnh nhân theo mức độ ưu tiên: Ưu tiên 1 → 2 → 3 (trong mỗi nhóm, giữ nguyên thứ tự nhập).
-- Với từng bệnh nhân, thực hiện lần lượt:
-
-  2.1. THỬ BUỔI SÁNG TRƯỚC:
-    a. Nếu là ca nhiễm trùng:
-       - Cố gắng xếp **phòng 1 buổi sáng** nếu còn slot (08:00–11:30, không trùng ca phòng 1).
-       - Nếu phòng 1 sáng không còn slot, cho phép dùng phòng 1 buổi chiều theo logic ở mục "Buổi chiều" bên dưới.
-
-    b. Nếu là ca sạch (không nhiễm trùng):
-       - ƯU TIÊN SÁNG, và trong buổi sáng:
-         i. Đầu tiên xét **phòng 7 và 8 buổi sáng**:
-            - Với mỗi phòng (7_sáng, 8_sáng):
-              • Tính thời điểm bắt đầu sớm nhất có thể trong khoảng 08:00–11:30.
-              • Không được trùng giờ với ca đã xếp trong phòng đó.
-              • Ca không được vắt qua 11:30.
-            - Trong các slot hợp lệ của 7_sáng và 8_sáng:
-              • Chọn phương án có **giờ kết thúc sớm nhất**.
-              • Nếu hoà, chọn phòng có **ít ca hơn trong buổi sáng**.
-              • Nếu còn hoà, chọn phòng có số nhỏ hơn.
-
-         ii. Chỉ khi **không còn slot hợp lệ ở 7_sáng và 8_sáng**:
-            - Mới xét tiếp **phòng 9_sáng và 10_sáng** theo nguyên tắc tương tự:
-              • Tìm slot sớm nhất không trùng, không vắt qua 11:30.
-              • Chọn phương án kết thúc sớm nhất, ít ca hơn, số phòng nhỏ hơn (9 trước 10).
-       - Nếu **bất kỳ phòng nào trong 7,8,9,10 buổi sáng còn slot hợp lệ**, phải xếp vào BUỔI SÁNG
-         (không được đẩy sang buổi chiều).
-
-  2.2. CHỈ KHI MỌI PHÒNG 7–8–9–10 BUỔI SÁNG ĐỀU KHÔNG CÒN SLOT:
-    - Mới bắt đầu xếp sang BUỔI CHIỀU (13:30–17:00) cho ngày ${workingDate}.
-
-    - Quy tắc cho BUỔI CHIỀU:
-      a. Ca nhiễm trùng:
-         - Ưu tiên phòng 1 buổi chiều (1_chiều): tìm slot sớm nhất 13:30–17:00, không trùng, không vắt qua 17:00.
-      b. Ca sạch:
-         - Áp dụng thứ tự phòng **7,8 trước, sau đó 9,10** trong BUỔI CHIỀU:
-           • Bước 1: xét 7_chiều và 8_chiều → chọn slot hợp lệ kết thúc sớm nhất, ưu tiên dây chuyền ít ca hơn.
-           • Nếu không còn slot ở 7_chiều và 8_chiều → xét 9_chiều, 10_chiều tương tự.
-
-3. Quy tắc kiểm tra xung đột:
-- Một ca được xem là trùng nếu khoảng [Start, End) của nó giao nhau (overlap) với bất kỳ ca nào đã được xếp
-  trong cùng phòng và cùng ngày ${workingDate}.
-- Không được vắt ca qua:
-  - Buổi sáng: KHÔNG vắt quá 11:30.
-  - Buổi chiều: KHÔNG vắt quá 17:00.
-- Không xếp ca vào khoảng 11:30–13:30.
-
-4. Tuyệt đối KHÔNG được dồn tất cả ca sạch vào duy nhất một phòng rồi mới dùng phòng khác.
-- Ví dụ sai: xếp lần lượt 7_sáng đầy, 7_chiều đầy, rồi mới bắt đầu dùng 8_sáng.
-- Cách làm đúng: nếu 7_sáng vẫn còn ca nhưng 8_sáng đang trống, thì nên dàn trải sang 8_sáng trước khi đẩy ca xuống chiều.
-
-VII. ĐỊNH DẠNG ĐẦU RA
-Trả về mảng JSON, mỗi phần tử:
-
-{
-  "id": "id của bệnh nhân từ List A",
-  "PPPT": "Theo chuẩn BƯỚC 1",
-  "operatingRoom": "1 hoặc 7 hoặc 8 hoặc 9 hoặc 10",
-  "surgeryTime": "HH:mm (giờ bắt đầu)",
-  "surgeonName": "Tên phẫu thuật viên (có thể rỗng)",
-  "surgeryDate": "${workingDate}"
-}
-
-- "surgeryDate" LUÔN ở dạng YYYY-MM-DD và trong hầu hết trường hợp là "${workingDate}".
-- Không thêm field nào khác ngoài các field này.
+Không thêm trường khác, không ghi chú ngoài JSON.
 `;
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
