@@ -269,7 +269,7 @@ const App: React.FC = () => {
             if (scrollTop < 0) return;
 
             const lastTop = scrollMetaRef.current.lastTop;
-            const threshold = 90;
+            const threshold = 120;
             const showThreshold = 20;
             const velocityThreshold = 10;
 
