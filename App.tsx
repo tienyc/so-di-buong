@@ -101,6 +101,31 @@ const formatDayMonth = (isoDate?: string): string => {
     const [year, month, day] = normalized.split('-');
     return `${day}/${month}`;
 };
+
+const getPatientRoomTag = (patient: Patient): string => {
+    const source = (patient.roomNumber || patient.ward || '').trim();
+    if (!source) return '';
+    const normalized = source.toLowerCase();
+
+    if (normalized.startsWith('dịch vụ') || normalized.startsWith('dv')) {
+        const digits = source.match(/\d+/)?.[0] || '';
+        return `DV${digits}`;
+    }
+    if (normalized.includes('cấp cứu') || normalized.includes('cap cuu')) {
+        const digits = source.match(/\d+/)?.[0];
+        return digits ? `CC${digits}` : 'CC';
+    }
+    if (normalized.includes('hậu phẫu') || normalized.includes('hau phau')) return 'HP';
+    if (normalized.includes('tiền phẫu') || normalized.includes('tien phau')) return 'TP';
+    if (normalized.includes('nhiễm trùng') || normalized.includes('nhiem trung')) return 'N.Trùng';
+    if (normalized.includes('tuyến cao') || normalized.includes('tuyen cao') || normalized.includes('trung cao')) return 'Tr.Cao';
+    if (normalized.includes('cao tuổi') || normalized.includes('cao tuoi')) return 'C.Tuổi';
+
+    const words = source.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return source.slice(0, 4).toUpperCase();
+    if (words.length === 1) return words[0].slice(0, 6).toUpperCase();
+    return words.slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
+};
 // --- END HELPER FUNCTIONS ---
 
 const App: React.FC = () => {
@@ -1290,7 +1315,7 @@ const App: React.FC = () => {
                                                                                     const timeLabel = formatSurgeryTime(p.surgeryTime) || '--:--';
                                                                                     const hour = p.surgeryTime && p.surgeryTime.includes(':') ? parseInt(p.surgeryTime.split(':')[0], 10) : null;
                                                                                     const isAfternoon = hour !== null && hour >= 12;
-                                                                                    const roomLabel = (p.operatingRoom || p.roomNumber || '').trim();
+                                                                                    const roomLabel = getPatientRoomTag(p);
                                                                                     return (
                                                                                         <div key={p.id} className="flex gap-3 bg-white p-3 rounded-xl border border-gray-100 relative">
                                                                                             <div className="flex flex-col items-center justify-center w-14 border-r border-gray-100 pr-3">
