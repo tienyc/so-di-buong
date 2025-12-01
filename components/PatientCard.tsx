@@ -22,7 +22,7 @@ interface PatientCardProps {
 const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegisterSurgery, onCancelSurgery, onTransfer, onDischarge, onEdit, showDischargeConfirm, onConfirmDischarge, onCompleteOrder, onQuickSevereToggle, expanded: expandedProp, onToggleExpand }) => {
     const [internalExpanded, setInternalExpanded] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
-    const [menuPosition, setMenuPosition] = useState<{ top: number, align: 'left' | 'right', value: number } | null>(null);
+    const [menuPosition, setMenuPosition] = useState<{ top: number, left: number, align: 'left' | 'right' } | null>(null);
     const [menuPlacement, setMenuPlacement] = useState<'above' | 'below'>('below');
     const [showDetails, setShowDetails] = useState(false); 
     const [showAllOrders, setShowAllOrders] = useState(false);
@@ -412,12 +412,19 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                 ? Math.max(12, rect.top - estimatedMenuHeight - 8)
                                 : rect.bottom + 8;
                             const viewportWidth = window.innerWidth;
-                            const shouldAlignLeft = rect.right + 260 > viewportWidth;
+                            const menuWidth = 240;
+                            const safeMargin = 12;
+                            const preferredLeft = rect.right - menuWidth;
+                            const clampedLeft = Math.min(
+                                Math.max(preferredLeft, safeMargin),
+                                Math.max(safeMargin, viewportWidth - menuWidth - safeMargin)
+                            );
+                            const align = rect.left + rect.width / 2 < viewportWidth / 2 ? 'left' : 'right';
                             setMenuPlacement(shouldOpenAbove ? 'above' : 'below');
                             setMenuPosition({
                                 top,
-                                align: shouldAlignLeft ? 'left' : 'right',
-                                value: shouldAlignLeft ? Math.max(12, rect.left - 12) : Math.max(12, viewportWidth - rect.right),
+                                left: clampedLeft,
+                                align,
                             });
                         }
                         setShowMenu(true);
@@ -435,7 +442,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                     style={{
                         position: 'fixed',
                         top: `${menuPosition.top}px`,
-                        [menuPosition.align === 'right' ? 'right' : 'left']: `${menuPosition.value}px`,
+                        left: `${menuPosition.left}px`,
                     }}
                     className={`bg-white/95 backdrop-blur-2xl shadow-2xl border border-gray-100 rounded-2xl py-2 w-60 animate-in fade-in zoom-in-95 duration-200 ring-1 ring-black/5 z-[100] ${
                         menuPlacement === 'above'

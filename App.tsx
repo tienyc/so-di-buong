@@ -1413,7 +1413,7 @@ const App: React.FC = () => {
                                                                                                 <div className="text-sm text-gray-600">{p.surgeryMethod}</div>
                                                                                                 {p.surgeonName && <div className="text-xs text-indigo-600 font-bold mt-1">BS: {p.surgeonName}</div>}
                                                                                             </div>
-                                                                                            <div className="absolute bottom-3 right-3 flex gap-2">
+                                                                                            <div className="flex flex-wrap gap-2 justify-end mt-3">
                                                                                                 <button
                                                                                                     onClick={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }}
                                                                                                     className="text-sm px-3 py-2 rounded-lg font-bold bg-gray-100 text-gray-500 hover:bg-orange-200 hover:text-orange-600 active:scale-95 transition-all shadow-sm"

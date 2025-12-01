@@ -139,6 +139,15 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
         await onDelete(patient.id);
     };
 
+    const formatDateVN = (iso?: string) => {
+        if (!iso) return '';
+        const parts = iso.split('-');
+        if (parts.length === 3) {
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return iso;
+    };
+
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[95vh]">
@@ -237,15 +246,20 @@ const PatientEditModal: React.FC<PatientEditModalProps> = ({
                                     <button type="button" onClick={() => changeSurgeryDate(-1)} className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 active:scale-95 shrink-0 transition-colors">
                                         <ChevronLeft size={16} className="text-gray-600"/>
                                     </button>
-                                    <input 
-                                        type="date" 
-                                        value={formData.surgeryDate || ''}
-                                        onChange={(e) => handleChange('surgeryDate', e.target.value)}
-                                        className={`${inputClass} text-center font-bold min-w-0`}
-                                    />
+                                    <div className="flex-1">
+                                        <input 
+                                            type="date" 
+                                            value={formData.surgeryDate || ''}
+                                            onChange={(e) => handleChange('surgeryDate', e.target.value)}
+                                            className={`${inputClass} text-center font-bold min-w-0`}
+                                        />
+                                    </div>
                                     <button type="button" onClick={() => changeSurgeryDate(1)} className="p-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 active:scale-95 shrink-0 transition-colors">
                                         <ChevronRight size={16} className="text-gray-600"/>
                                     </button>
+                                </div>
+                                <div className="text-[11px] text-center text-gray-500 mt-1 font-semibold">
+                                    {formatDateVN(formData.surgeryDate) || 'Chọn ngày theo định dạng dd/mm/yyyy'}
                                 </div>
                             </div>
                             <div className="col-span-3 sm:col-span-1">
