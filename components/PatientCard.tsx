@@ -22,11 +22,13 @@ interface PatientCardProps {
 const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegisterSurgery, onCancelSurgery, onTransfer, onDischarge, onEdit, showDischargeConfirm, onConfirmDischarge, onCompleteOrder, onQuickSevereToggle, expanded: expandedProp, onToggleExpand }) => {
     const [internalExpanded, setInternalExpanded] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
-    const [menuPosition, setMenuPosition] = useState<{ top: number, right: number } | null>(null);
+    const [menuPosition, setMenuPosition] = useState<{ top: number, align: 'left' | 'right', value: number } | null>(null);
+    const [menuPlacement, setMenuPlacement] = useState<'above' | 'below'>('below');
     const [showDetails, setShowDetails] = useState(false); 
     const [showAllOrders, setShowAllOrders] = useState(false);
 
     const triggerRef = useRef<HTMLButtonElement>(null);
+    const menuContentRef = useRef<HTMLDivElement | null>(null);
 
     const todayStr = useMemo(() => {
         const today = new Date();
@@ -103,6 +105,37 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, [showMenu, patient.id]);
+
+    useEffect(() => {
+        if (!showMenu || !menuPosition) return;
+        const adjustPosition = () => {
+            if (!menuContentRef.current || !triggerRef.current) return;
+            const menuRect = menuContentRef.current.getBoundingClientRect();
+            const triggerRect = triggerRef.current.getBoundingClientRect();
+            const bottomNav = document.querySelector('[data-bottom-nav="true"]') as HTMLElement | null;
+            const limit = bottomNav
+                ? bottomNav.getBoundingClientRect().top - 12
+                : window.innerHeight - 12;
+            const gap = 6;
+            let desiredPlacement = menuPlacement;
+            let desiredTop = menuPosition.top;
+
+            const overflow = menuRect.bottom - limit;
+            if (overflow > 0) {
+                desiredPlacement = 'above';
+                desiredTop = Math.max(12, triggerRect.top - menuRect.height - gap);
+            } else if (menuPlacement === 'above') {
+                desiredTop = Math.max(12, triggerRect.top - menuRect.height - gap);
+            }
+
+            if (Math.abs(desiredTop - menuPosition.top) > 1 || desiredPlacement !== menuPlacement) {
+                setMenuPosition(prev => prev ? { ...prev, top: desiredTop } : prev);
+                setMenuPlacement(desiredPlacement);
+            }
+        };
+        const raf = requestAnimationFrame(adjustPosition);
+        return () => cancelAnimationFrame(raf);
+    }, [showMenu, menuPosition, menuPlacement]);
     
     // Logic Lọc Y lệnh an toàn
     const ordersSafe = Array.isArray(patient.orders) ? patient.orders : [];
@@ -265,6 +298,8 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         else setInternalExpanded(prev => !prev);
     };
 
+    const completedOrders = ordersSafe.filter(order => order.status === OrderStatus.COMPLETED);
+
     return (
         <div className={`relative rounded-2xl mb-3 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${getCardStyle()}`}>
             <span
@@ -364,14 +399,28 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                     ref={triggerRef}
                     onClick={(e) => {
                         e.stopPropagation();
+                        if (showMenu) {
+                            setShowMenu(false);
+                            return;
+                        }
                         if (triggerRef.current) {
                             const rect = triggerRef.current.getBoundingClientRect();
+                            const estimatedMenuHeight = 320;
+                            const viewportHeight = window.innerHeight;
+                            const shouldOpenAbove = rect.bottom + estimatedMenuHeight > viewportHeight;
+                            const top = shouldOpenAbove
+                                ? Math.max(12, rect.top - estimatedMenuHeight - 8)
+                                : rect.bottom + 8;
+                            const viewportWidth = window.innerWidth;
+                            const shouldAlignLeft = rect.right + 260 > viewportWidth;
+                            setMenuPlacement(shouldOpenAbove ? 'above' : 'below');
                             setMenuPosition({
-                                top: rect.bottom + 8,
-                                right: window.innerWidth - rect.right,
+                                top,
+                                align: shouldAlignLeft ? 'left' : 'right',
+                                value: shouldAlignLeft ? Math.max(12, rect.left - 12) : Math.max(12, viewportWidth - rect.right),
                             });
                         }
-                        setShowMenu(prev => !prev);
+                        setShowMenu(true);
                     }}
                     className="p-2 -mr-2 text-gray-400 hover:text-medical-600 active:bg-black/5 rounded-full transition-colors"
                 >
@@ -381,13 +430,18 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
 
             {showMenu && menuPosition && ReactDOM.createPortal(
                  <div
+                    ref={menuContentRef}
                     id={`menu-portal-${patient.id}`}
                     style={{
                         position: 'fixed',
                         top: `${menuPosition.top}px`,
-                        right: `${menuPosition.right}px`,
+                        [menuPosition.align === 'right' ? 'right' : 'left']: `${menuPosition.value}px`,
                     }}
-                    className="bg-white/95 backdrop-blur-2xl shadow-2xl border border-gray-100 rounded-2xl py-2 w-60 animate-in fade-in zoom-in-95 duration-200 origin-top-right ring-1 ring-black/5 z-[100]"
+                    className={`bg-white/95 backdrop-blur-2xl shadow-2xl border border-gray-100 rounded-2xl py-2 w-60 animate-in fade-in zoom-in-95 duration-200 ring-1 ring-black/5 z-[100] ${
+                        menuPlacement === 'above'
+                            ? menuPosition.align === 'right' ? 'origin-bottom-right' : 'origin-bottom-left'
+                            : menuPosition.align === 'right' ? 'origin-top-right' : 'origin-top-left'
+                    } max-h-[calc(100vh-40px)] overflow-auto`}
                  >
                      <button onClick={() => { onEdit(patient.id); setShowMenu(false); }} className="w-full text-left px-4 py-3.5 text-sm text-slate-700 hover:bg-gray-50 flex items-center gap-3 font-medium">
                          <Edit3 size={18} className="text-slate-400" /> Sửa chi tiết
@@ -494,6 +548,29 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                                     {patient.historySummary}
                                 </div>
                             </div>
+
+                            {completedOrders.length > 0 && (
+                                <div className="mt-4">
+                                    <span className="font-bold flex items-center gap-1.5 text-[11px] uppercase text-slate-400 mb-2 tracking-wide">
+                                        <ClipboardList size={14}/> Y lệnh đã thực hiện
+                                    </span>
+                                    <div className="space-y-2 border border-gray-100 rounded-xl p-3 bg-gray-50/80">
+                                        {completedOrders.slice(0, 5).map(order => (
+                                            <div key={order.id} className="text-[12px] text-slate-600 flex items-start gap-2">
+                                                <span className="text-[11px] font-bold text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                                                    {formatDateVN(order.executionDate)}
+                                                </span>
+                                                <span className="flex-1">{order.content}</span>
+                                            </div>
+                                        ))}
+                                        {completedOrders.length > 5 && (
+                                            <div className="text-[11px] text-gray-400 italic text-right">
+                                                +{completedOrders.length - 5} y lệnh khác
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

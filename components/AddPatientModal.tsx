@@ -15,6 +15,9 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
     const [isProcessing, setIsProcessing] = useState(false);
     const [aiPreview, setAiPreview] = useState<Patient[] | null>(null);
     const [aiError, setAiError] = useState<string | null>(null);
+    const [isAiManualEditing, setIsAiManualEditing] = useState(false);
+    const [aiDraftPatients, setAiDraftPatients] = useState<Patient[]>([]);
+    const [aiManualError, setAiManualError] = useState<string | null>(null);
 
     // AI State
     const [importText, setImportText] = useState('');
@@ -48,6 +51,15 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         const existingRooms = block.patients.map(p => p.roomNumber).filter(Boolean);
         return Array.from(new Set([...defined, ...existingRooms])).sort();
     }, [manualForm.selectedBlockId, rooms]);
+
+    const aiWardOptions = useMemo(() => {
+        return rooms.map(r => {
+            const defined = r.definedRooms || [];
+            const patientRooms = r.patients.map(p => p.roomNumber).filter(Boolean);
+            const uniqueRooms = Array.from(new Set([...defined, ...patientRooms])).sort();
+            return { name: r.name, rooms: uniqueRooms };
+        });
+    }, [rooms]);
 
     if (!isOpen) return null;
 
@@ -133,7 +145,10 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                 ward: p.ward || baseWard || FALLBACK_WARD
             }));
             setAiPreview(newPatients);
+            setAiDraftPatients(newPatients);
             setAiError(null);
+            setIsAiManualEditing(false);
+            setAiManualError(null);
         } catch (error) {
             console.error('AI import error:', error);
             setAiPreview(null);
@@ -147,34 +162,93 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         if (!aiPreview?.length) return;
         onAddPatients(aiPreview);
         setAiPreview(null);
+        setAiDraftPatients([]);
         setImportText('');
+        setIsAiManualEditing(false);
+        setAiManualError(null);
         onClose();
     };
 
     const handleEditManually = () => {
         if (!aiPreview?.length) return;
+        setAiDraftPatients(aiPreview);
+        setAiManualError(null);
+        setIsAiManualEditing(true);
+    };
 
-        // Take the first patient from AI preview and populate manual form
-        const firstPatient = aiPreview[0];
-        const targetBlock = rooms.find(r => r.name === firstPatient.ward) || rooms[0];
-
-        setManualForm({
-            fullName: firstPatient.fullName,
-            age: firstPatient.age,
-            gender: firstPatient.gender,
-            roomNumber: firstPatient.roomNumber,
-            diagnosis: firstPatient.diagnosis,
-            historySummary: firstPatient.historySummary,
-            admissionDate: firstPatient.admissionDate,
-            isSevere: firstPatient.isSevere,
-            status: firstPatient.status,
-            selectedBlockId: targetBlock?.id
+    const handleAiDraftChange = (index: number, field: keyof Patient | 'ward', value: string | number | boolean) => {
+        setAiDraftPatients(prev => {
+            const next = [...prev];
+            const patient = { ...next[index] };
+            if (field === 'ward') {
+                patient.ward = value as string;
+                const wardRooms = aiWardOptions.find(o => o.name === patient.ward)?.rooms || [];
+                if (wardRooms.length > 0 && !wardRooms.includes(patient.roomNumber)) {
+                    patient.roomNumber = wardRooms[0];
+                }
+            } else {
+                (patient as any)[field] = value;
+            }
+            next[index] = patient;
+            return next;
         });
+    };
 
-        // Clear AI state and switch to manual tab
-        setAiPreview(null);
-        setImportText('');
-        setActiveTab('MANUAL');
+    const handleAddDraftPatient = () => {
+        const baseWard = aiWardOptions[0]?.name || rooms[0]?.name || FALLBACK_WARD;
+        const defaultRoom = aiWardOptions[0]?.rooms?.[0] || FALLBACK_ROOM;
+        const newPatient: Patient = {
+            id: Math.random().toString(36).substr(2, 9),
+            fullName: 'Bệnh nhân mới',
+            age: 0,
+            gender: 'Nam',
+            roomNumber: defaultRoom,
+            bedNumber: '',
+            admissionDate: new Date().toISOString().split('T')[0],
+            roomEntryDate: new Date().toISOString().split('T')[0],
+            diagnosis: 'Chưa có chẩn đoán',
+            historySummary: 'Chưa có thông tin chi tiết',
+            orders: [],
+            isScheduledForSurgery: false,
+            status: PatientStatus.ACTIVE,
+            isSevere: false,
+            ward: baseWard,
+        };
+        setAiDraftPatients(prev => [...prev, newPatient]);
+    };
+
+    const handleRemoveDraftPatient = (index: number) => {
+        setAiDraftPatients(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleApplyAiManualEdit = () => {
+        if (!aiDraftPatients.length) {
+            setAiManualError('Danh sách đang trống. Hãy thêm ít nhất một bệnh nhân.');
+            return;
+        }
+        const cleaned = aiDraftPatients.map((patient, idx) => {
+            const wardName = patient.ward || aiWardOptions[0]?.name || rooms[0]?.name || FALLBACK_WARD;
+            const wardRooms = aiWardOptions.find(o => o.name === wardName)?.rooms || [];
+            const normalizedRoom = wardRooms.length === 0
+                ? (patient.roomNumber || FALLBACK_ROOM)
+                : (wardRooms.includes(patient.roomNumber) ? patient.roomNumber : wardRooms[0]);
+            return {
+                ...patient,
+                fullName: capitalizeWords(patient.fullName || `Bệnh nhân ${idx + 1}`),
+                diagnosis: patient.diagnosis || 'Chưa có chẩn đoán',
+                ward: wardName,
+                roomNumber: normalizedRoom,
+            };
+        });
+        setAiPreview(cleaned);
+        setIsAiManualEditing(false);
+        setAiManualError(null);
+    };
+
+    const handleCancelAiManualEdit = () => {
+        setAiDraftPatients(aiPreview || []);
+        setIsAiManualEditing(false);
+        setAiManualError(null);
     };
 
     return (
@@ -234,6 +308,16 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                     <input type="number" className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 text-center font-bold text-lg"
                                         value={manualForm.age || ''} onChange={e => handleManualChange('age', parseInt(e.target.value))} />
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase mb-2 tracking-wide">Chẩn đoán sơ bộ</label>
+                                <textarea
+                                    className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 text-slate-700 font-medium"
+                                    rows={2}
+                                    value={manualForm.diagnosis || ''}
+                                    onChange={e => handleManualChange('diagnosis', capitalizeSentence(e.target.value))}
+                                />
                             </div>
                             
                             {/* Zone and Room Selection */}
@@ -308,54 +392,191 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase mb-2 tracking-wide">Chẩn đoán sơ bộ</label>
-                                <textarea className="w-full bg-gray-50 border-transparent p-3.5 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-medical-500 text-slate-700 font-medium" rows={2}
-                                    value={manualForm.diagnosis || ''} onChange={e => handleManualChange('diagnosis', capitalizeSentence(e.target.value))} />
-                            </div>
-
                             <button type="submit" className="w-full bg-medical-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-medical-600 mt-2 shadow-xl shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all">
                                 <Plus size={24} className="inline"/> Tạo Hồ Sơ Bệnh Án
                             </button>
                         </form>
                     ) : (
-                        <div className="space-y-4">
-                            <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
-                                <p className="text-xs text-indigo-700 leading-relaxed font-medium">
-                                    💡 <span className="font-bold">Mẹo:</span> Copy tin nhắn bàn giao hoặc chụp ảnh danh sách bệnh nhân (Text Scan) rồi dán vào đây. AI sẽ tự động tách tên, tuổi, chẩn đoán.
-                                </p>
-                            </div>
-                    <textarea 
-                        className="w-full bg-gray-50 border-transparent rounded-2xl p-4 h-48 focus:bg-white focus:ring-2 focus:ring-medical-500 outline-none text-sm leading-relaxed"
-                        placeholder="VD: 1. Nguyễn Văn A, 50t, Viêm phổi. Khu B3, P301..."
-                        value={importText}
-                        onChange={(e) => setImportText(e.target.value)}
-                    />
-                    {aiError && (
-                        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-2xl p-3">
-                            {aiError}
-                        </div>
-                    )}
-                    {aiPreview && (
-                        <div className="mt-4 bg-white rounded-2xl border border-blue-100 p-4 space-y-3">
-                            <div className="flex justify-between items-center">
-                                <h4 className="font-bold text-sm text-blue-700">Dự đoán từ AI</h4>
-                                <button onClick={() => setAiPreview(null)} className="text-xs text-blue-500">Đóng</button>
-                            </div>
-                            {aiPreview.map(p => (
-                                <div key={p.id} className="text-sm text-slate-600">
-                                    <div className="font-semibold text-slate-800">{p.fullName}</div>
-                                    <div className="text-xs text-slate-500">{p.age} tuổi · {p.diagnosis}</div>
-                                    <div className="text-xs text-slate-500">Khu: {p.ward} · Phòng: {p.roomNumber}</div>
+                    <div className="space-y-4">
+                            {!isAiManualEditing && (
+                                <>
+                                    <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
+                                        <p className="text-xs text-indigo-700 leading-relaxed font-medium">
+                                            💡 <span className="font-bold">Mẹo:</span> Copy tin nhắn bàn giao hoặc chụp ảnh danh sách bệnh nhân (Text Scan) rồi dán vào đây. AI sẽ tự động tách tên, tuổi, chẩn đoán.
+                                        </p>
+                                    </div>
+                                    <textarea 
+                                        className="w-full bg-gray-50 border-transparent rounded-2xl p-4 h-48 focus:bg-white focus:ring-2 focus:ring-medical-500 outline-none text-sm leading-relaxed"
+                                        placeholder="VD: 1. Nguyễn Văn A, 50t, Viêm phổi. Khu B3, P301..."
+                                        value={importText}
+                                        onChange={(e) => setImportText(e.target.value)}
+                                    />
+                                    {aiError && (
+                                        <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-2xl p-3">
+                                            {aiError}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                            {aiPreview && (
+                                <div className="mt-4 bg-white rounded-2xl border border-blue-100 p-4 space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <h4 className="font-bold text-sm text-blue-700">Dự đoán từ AI</h4>
+                                        {isAiManualEditing ? (
+                                            <button onClick={handleCancelAiManualEdit} className="text-xs text-blue-500">Thoát chỉnh tay</button>
+                                        ) : (
+                                            <button onClick={() => setAiPreview(null)} className="text-xs text-blue-500">Đóng</button>
+                                        )}
+                                    </div>
+                                    {isAiManualEditing ? (
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <p className="text-xs text-slate-500">Chỉnh từng bệnh nhân bằng form nhanh bên dưới.</p>
+                                                <button type="button" onClick={handleAddDraftPatient} className="text-xs font-semibold text-blue-600 hover:underline">
+                                                    + Thêm bệnh nhân
+                                                </button>
+                                            </div>
+                                            {aiDraftPatients.length === 0 && (
+                                                <div className="text-xs text-slate-400 text-center border border-dashed border-blue-200 rounded-xl py-6">
+                                                    Chưa có bệnh nhân nào. Bấm “+ Thêm bệnh nhân” để bắt đầu.
+                                                </div>
+                                            )}
+                                            <div className="max-h-64 overflow-y-auto space-y-3 pr-1">
+                                                {aiDraftPatients.map((patient, idx) => {
+                                                    const wardOption = aiWardOptions.find(o => o.name === patient.ward);
+                                                    const roomOptions = wardOption?.rooms || [];
+                                                    const wardValue = wardOption ? wardOption.name : (aiWardOptions[0]?.name || '');
+                                                    const roomValue = roomOptions.length > 0
+                                                        ? (roomOptions.includes(patient.roomNumber) ? patient.roomNumber : roomOptions[0])
+                                                        : (patient.roomNumber || '');
+                                                    return (
+                                                    <div key={patient.id} className="border border-blue-100 rounded-2xl p-3 bg-blue-50/50 shadow-sm space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-xs font-bold text-blue-700 uppercase">BN #{idx + 1}</span>
+                                                            <button type="button" onClick={() => handleRemoveDraftPatient(idx)} className="text-xs text-red-500 hover:underline">
+                                                                Xóa
+                                                            </button>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                                            <div className="col-span-2">
+                                                                <label className="font-semibold text-slate-600 mb-1 block">Họ tên</label>
+                                                                <input
+                                                                    type="text"
+                                                                    value={patient.fullName}
+                                                                    onChange={(e) => handleAiDraftChange(idx, 'fullName', e.target.value)}
+                                                                    className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="font-semibold text-slate-600 mb-1 block">Tuổi</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={patient.age}
+                                                                    onChange={(e) => handleAiDraftChange(idx, 'age', Number(e.target.value))}
+                                                                    className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                            <label className="font-semibold text-slate-600 mb-1 block">Giới</label>
+                                                            <select
+                                                                value={patient.gender || 'Nam'}
+                                                                onChange={(e) => handleAiDraftChange(idx, 'gender', e.target.value)}
+                                                                className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                            >
+                                                                <option value="Nam">Nam</option>
+                                                                <option value="Nữ">Nữ</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="font-semibold text-slate-600 mb-1 block">Khu</label>
+                                                            {aiWardOptions.length > 0 ? (
+                                                                <select
+                                                                    value={wardValue}
+                                                                    onChange={(e) => handleAiDraftChange(idx, 'ward', e.target.value)}
+                                                                    className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                                >
+                                                                    <option value="" disabled>Chọn khu...</option>
+                                                                    {aiWardOptions.map(opt => (
+                                                                        <option key={opt.name} value={opt.name}>{opt.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                            ) : (
+                                                                <input
+                                                                    type="text"
+                                                                    value={patient.ward || ''}
+                                                                    onChange={(e) => handleAiDraftChange(idx, 'ward', e.target.value)}
+                                                                    className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <label className="font-semibold text-slate-600 mb-1 block">Phòng</label>
+                                                            {roomOptions.length > 0 ? (
+                                                                <select
+                                                                    value={roomValue}
+                                                                    onChange={(e) => handleAiDraftChange(idx, 'roomNumber', e.target.value)}
+                                                                    className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                                >
+                                                                    {roomOptions.map(room => (
+                                                                        <option key={room} value={room}>{room}</option>
+                                                                    ))}
+                                                                </select>
+                                                            ) : (
+                                                                <input
+                                                                    type="text"
+                                                                    value={patient.roomNumber || ''}
+                                                                    onChange={(e) => handleAiDraftChange(idx, 'roomNumber', e.target.value)}
+                                                                    className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <div className="col-span-2">
+                                                            <label className="font-semibold text-slate-600 mb-1 block">Chẩn đoán</label>
+                                                            <input
+                                                                type="text"
+                                                                value={patient.diagnosis || ''}
+                                                                onChange={(e) => handleAiDraftChange(idx, 'diagnosis', e.target.value)}
+                                                                className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            {aiManualError && (
+                                                <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl p-2">
+                                                    {aiManualError}
+                                                </div>
+                                            )}
+                                            <div className="flex gap-2">
+                                                <button type="button" onClick={handleApplyAiManualEdit} className="flex-1 bg-blue-600 text-white rounded-xl py-2 text-sm font-bold">
+                                                    Áp dụng danh sách
+                                                </button>
+                                                <button type="button" onClick={handleCancelAiManualEdit} className="flex-1 bg-gray-100 text-slate-600 rounded-xl py-2 text-sm font-bold hover:bg-gray-200">
+                                                    Hủy
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {aiPreview.map(p => (
+                                                <div key={p.id} className="text-sm text-slate-600">
+                                                    <div className="font-semibold text-slate-800">{p.fullName}</div>
+                                                    <div className="text-xs text-slate-500">{p.age} tuổi · {p.diagnosis}</div>
+                                                    <div className="text-xs text-slate-500">Khu: {p.ward} · Phòng: {p.roomNumber}</div>
+                                                </div>
+                                            ))}
+                                            <div className="flex gap-2">
+                                                <button type="button" onClick={handleAcceptAi} className="flex-1 bg-blue-500 text-white rounded-xl py-2 text-sm font-bold">Chấp nhận</button>
+                                                <button type="button" onClick={handleEditManually} className="flex-1 bg-gray-100 rounded-xl py-2 text-sm font-bold text-slate-600 hover:bg-gray-200 transition-colors">Chỉnh tay</button>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
-                            ))}
-                            <div className="flex gap-2">
-                                <button type="button" onClick={handleAcceptAi} className="flex-1 bg-blue-500 text-white rounded-xl py-2 text-sm font-bold">Chấp nhận</button>
-                                <button type="button" onClick={handleEditManually} className="flex-1 bg-gray-100 rounded-xl py-2 text-sm font-bold text-slate-600 hover:bg-gray-200 transition-colors">Chỉnh tay</button>
-                            </div>
-                        </div>
-                    )}
-                            <button 
+                            )}
+                            {!isAiManualEditing && (
+                                <button 
                                 onClick={handleAIImport} 
                                 disabled={isProcessing || !importText.trim()}
                                 className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-4 rounded-2xl hover:opacity-90 flex items-center justify-center gap-2 font-bold disabled:opacity-50 shadow-lg shadow-indigo-500/30 active:scale-95 transition-all"
@@ -363,6 +584,7 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                 {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Sparkles size={20}/>}
                                 Phân tích & Tạo Danh Sách
                             </button>
+                            )}
                         </div>
                     )}
                 </div>

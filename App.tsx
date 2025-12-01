@@ -53,7 +53,8 @@ const escapeHtml = (text?: string) => {
 
 const normalizeDateString = (dateStr?: string): string => {
     if (!dateStr || typeof dateStr !== 'string') return '';
-    const base = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const baseRaw = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const base = baseRaw.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(base)) return base;
     const slashMatch = base.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
     if (slashMatch) {
@@ -268,11 +269,17 @@ const App: React.FC = () => {
             if (scrollTop < 0) return;
 
             const lastTop = scrollMetaRef.current.lastTop;
-            const threshold = 60;
+            const threshold = 90;
+            const showThreshold = 20;
+            const velocityThreshold = 10;
 
-            if (scrollTop > lastTop && scrollTop > threshold) {
+            const delta = scrollTop - lastTop;
+
+            if (delta > velocityThreshold && scrollTop > threshold) {
                 setHeaderHidden(true);
-            } else if (scrollTop < lastTop - 5 || scrollTop <= threshold) {
+            } else if (delta < -velocityThreshold && (lastTop - scrollTop) > showThreshold) {
+                setHeaderHidden(false);
+            } else if (scrollTop <= threshold) {
                 setHeaderHidden(false);
             }
 
@@ -752,23 +759,38 @@ const App: React.FC = () => {
                 dischargeDateNormalized && dischargeDateNormalized === todayISO;
 
             const surgeryDateNormalized = normalizeDateString(p.surgeryDate);
-            const isSurgeryToday =
-                p.isScheduledForSurgery && surgeryDateNormalized === todayISO;
+            const isSurgeryToday = !!(surgeryDateNormalized && surgeryDateNormalized === todayISO);
 
-            let orderText = '';
+            const ordersToday = (p.orders || []).filter(order => {
+                if (!order.executionDate) return false;
+                const execDate = normalizeDateString(order.executionDate);
+                return execDate === todayISO && order.status !== OrderStatus.CANCELLED;
+            });
+
+            const orderNotes: string[] = [];
             if (isDischargeToday) {
-                orderText = 'Ra viện';
-            } else if (isSurgeryToday) {
-                const timeLabel = formatSurgeryTime(p.surgeryTime) || '';
-                orderText = timeLabel ? `Chuyển mổ lúc ${timeLabel}` : 'Chuyển mổ';
+                orderNotes.push('☐ Ra viện');
             }
+            if (isSurgeryToday) {
+                const timeLabel = formatSurgeryTime(p.surgeryTime) || '';
+                orderNotes.push(timeLabel ? `☐ Chuyển mổ lúc ${timeLabel}` : '☐ Chuyển mổ');
+            }
+
+            if (ordersToday.length > 0) {
+                ordersToday.forEach(order => {
+                    const prefix = order.status === OrderStatus.COMPLETED ? '☑' : '☐';
+                    orderNotes.push(`${prefix} ${order.content}`);
+                });
+            }
+
+            const orderText = orderNotes.join('<br/>');
 
             return `
             <tr>
                 <td>${idx + 1}</td>
                 <td>${escapeHtml(p.fullName)}</td>
                 <td>${escapeHtml(p.diagnosis)}</td>
-                <td>${escapeHtml(orderText)}</td>
+                <td style="text-align:left;">${orderText}</td>
                 <td></td>
                 <td></td>
                 <td></td>
