@@ -402,6 +402,7 @@ const App: React.FC = () => {
                         };
                         if(isDischarge && dischargeDate) {
                             nextP.dischargeDate = dischargeDate;
+                            nextP.dischargeConfirmed = false;
                         }
                         updatedPatient = nextP;
                         return nextP;
@@ -417,6 +418,7 @@ const App: React.FC = () => {
 
             // Then update UI state
             setRooms(updatedRooms);
+            await loadDataFromSheet();
             setNotification({ message: 'Đã thêm y lệnh', type: 'success' });
         } catch (error) {
             console.error('Error adding order:', error);
@@ -504,18 +506,22 @@ const App: React.FC = () => {
     };
 
     const handleRegisterSurgery = (id: string) => handleUpdatePatient(id, { isScheduledForSurgery: true });
-    const handleCancelSurgery = (id: string) => handleUpdatePatient(id, {
-        isScheduledForSurgery: false,
-        surgeryDate: '',
-        surgeryTime: '',
-        operatingRoom: '',
-        surgeryMethod: '',
-        surgeonName: '',
-        anesthesiaMethod: '',
-        surgeryClassification: '',
-        surgeryRequirements: '',
-        surgeryNotes: '',
-    });
+    const handleCancelSurgery = async (id: string) => {
+        await handleUpdatePatient(id, {
+            isScheduledForSurgery: false,
+            isRegisteredForSurgery: false,
+            surgeryDate: '',
+            surgeryTime: '',
+            operatingRoom: '',
+            surgeryMethod: '',
+            surgeonName: '',
+            anesthesiaMethod: '',
+            surgeryClassification: '',
+            surgeryRequirements: '',
+            surgeryNotes: '',
+        });
+        setNotification({ message: 'Đã hủy đăng ký mổ', type: 'success' });
+    };
 
     const handleConfirmDischarge = async (id: string) => {
         if (window.confirm('Xác nhận bệnh nhân đã ra viện?')) {
@@ -737,19 +743,39 @@ const App: React.FC = () => {
         const wardName = selectedRoomBlockId
             ? rooms.find(r => r.id === selectedRoomBlockId)?.name || 'Tất cả'
             : 'Tất cả';
-        const rowsHtml = filteredPatients.map((p, idx) => `
+        const todayISO = getTodayString();
+
+        const rowsHtml = filteredPatients.map((p, idx) => {
+            const dischargeDateNormalized = normalizeDateString(p.dischargeDate);
+            const isDischargeToday =
+                dischargeDateNormalized && dischargeDateNormalized === todayISO;
+
+            const surgeryDateNormalized = normalizeDateString(p.surgeryDate);
+            const isSurgeryToday =
+                p.isScheduledForSurgery && surgeryDateNormalized === todayISO;
+
+            let orderText = '';
+            if (isDischargeToday) {
+                orderText = 'Ra viện';
+            } else if (isSurgeryToday) {
+                const timeLabel = formatSurgeryTime(p.surgeryTime) || '';
+                orderText = timeLabel ? `Chuyển mổ lúc ${timeLabel}` : 'Chuyển mổ';
+            }
+
+            return `
             <tr>
                 <td>${idx + 1}</td>
                 <td>${escapeHtml(p.fullName)}</td>
                 <td>${escapeHtml(p.diagnosis)}</td>
-                <td>${escapeHtml(p.orders?.[0]?.content || '')}</td>
+                <td>${escapeHtml(orderText)}</td>
                 <td></td>
                 <td></td>
                 <td></td>
                 <td></td>
                 <td></td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         const blankRows = Array.from({ length: 4 }).map((_, idx) => `
             <tr>
@@ -773,6 +799,9 @@ const App: React.FC = () => {
                 header { text-align: center; }
                 .actions { text-align: right; margin-top: 16px; }
                 button { padding: 8px 16px; border: 1px solid #2563eb; background: #fff; color: #2563eb; border-radius: 6px; font-weight: 600; cursor: pointer; }
+                @media print {
+                    .actions { display: none; }
+                }
             </style>
         </head>
         <body>

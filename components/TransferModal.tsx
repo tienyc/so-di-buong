@@ -13,8 +13,8 @@ interface TransferModalProps {
     onConfirm: (targetRoomId?: string, targetRoomNumber?: string, notes?: string, date?: string) => void;
 }
 
-const TransferModal: React.FC<TransferModalProps> = ({ 
-    isOpen, onClose, mode, patientName, rooms, currentRoomId, onConfirm 
+const TransferModal: React.FC<TransferModalProps> = ({
+    isOpen, onClose, mode, patientName, rooms, currentRoomId, onConfirm
 }) => {
     const [targetRoomId, setTargetRoomId] = useState(rooms[0]?.id || '');
     const [targetRoomNumber, setTargetRoomNumber] = useState('');
@@ -52,24 +52,39 @@ const TransferModal: React.FC<TransferModalProps> = ({
 
     const handleSubmit = () => {
         onConfirm(
-            mode === 'TRANSFER' ? targetRoomId : undefined, 
+            mode === 'TRANSFER' ? targetRoomId : undefined,
             mode === 'TRANSFER' ? targetRoomNumber : undefined,
-            notes, 
+            notes,
             date
         );
         setNotes('');
         onClose();
     };
 
+    const isTransfer = mode === 'TRANSFER';
+    const headerClass = isTransfer
+        ? 'bg-gradient-to-r from-medical-500 to-medical-600 text-white'
+        : 'bg-white text-slate-800 border-b border-gray-100';
+    const iconWrapperClass = isTransfer
+        ? 'bg-white/20 text-white'
+        : 'bg-sky-100 text-sky-600';
+    const closeBtnClass = isTransfer
+        ? 'p-1 hover:bg-white/20 rounded-full transition-colors'
+        : 'p-1 text-slate-500 hover:bg-slate-100 rounded-full transition-colors';
+
     return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
             <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden ring-1 ring-black/5">
-                <div className={`p-5 flex justify-between items-center text-white ${mode === 'TRANSFER' ? 'bg-gradient-to-r from-medical-500 to-medical-600' : 'bg-gradient-to-r from-slate-700 to-slate-800'}`}>
-                    <h3 className="font-bold text-lg flex items-center gap-2">
-                        {mode === 'TRANSFER' ? <ArrowRightLeft size={22}/> : <LogOut size={22}/>}
-                        {mode === 'TRANSFER' ? 'Chuyển Phòng' : 'Cho Ra Viện'}
+                <div className={`p-5 flex justify-between items-center ${headerClass}`}>
+                    <h3 className={`font-bold text-lg flex items-center gap-3 ${isTransfer ? '' : 'text-slate-800'}`}>
+                        <span className={`p-2 rounded-xl ${iconWrapperClass}`}>
+                            {isTransfer ? <ArrowRightLeft size={20} /> : <LogOut size={20} />}
+                        </span>
+                    <span>{isTransfer ? 'Chuyển Phòng' : 'Cho Ra Viện'}</span>
                     </h3>
-                    <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-full transition-colors"><X size={20} /></button>
+                    <button onClick={onClose} className={closeBtnClass}>
+                        <X size={20} className={isTransfer ? 'text-white' : 'text-slate-500'} />
+                    </button>
                 </div>
                 
                 <div className="p-6 space-y-5">
@@ -77,7 +92,7 @@ const TransferModal: React.FC<TransferModalProps> = ({
                         Thực hiện cho bệnh nhân: <span className="font-bold text-slate-800 block mt-1 text-xl">{patientName}</span>
                     </p>
 
-                    {mode === 'TRANSFER' ? (
+                    {isTransfer ? (
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-gray-400 uppercase mb-2 tracking-wide">Chuyển đến Khu/Nhà</label>
@@ -121,19 +136,19 @@ const TransferModal: React.FC<TransferModalProps> = ({
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-                            <label className="block text-xs font-bold text-gray-400 uppercase mb-2 tracking-wide">Ngày ra viện (Dự kiến/Chính thức)</label>
+                        <div className="bg-white p-4 rounded-2xl border border-sky-100 shadow-sm">
+                            <label className="block text-xs font-bold text-sky-600 uppercase mb-2 tracking-wide">Ngày ra viện (Dự kiến/Chính thức)</label>
                             <input
                                 type="date"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
-                                className="w-full bg-white border border-gray-200 rounded-lg p-2 focus:ring-2 focus:ring-gray-500 outline-none font-bold text-slate-800 text-center shadow-sm text-base mb-2"
+                                className="w-full bg-white border border-sky-200 rounded-xl p-3 focus:ring-2 focus:ring-sky-300 outline-none font-bold text-slate-900 text-center shadow-sm text-base mb-3"
                             />
                             <div className="flex gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setDate(new Date().toISOString().split('T')[0])}
-                                    className="flex-1 py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-medical-50 hover:border-medical-300 hover:text-medical-700 active:scale-95 transition-all"
+                                    className="flex-1 py-1.5 px-3 bg-sky-50 border border-sky-200 rounded-lg text-xs font-bold text-sky-700 hover:bg-sky-100 hover:border-sky-300 active:scale-95 transition-all"
                                 >
                                     Hôm nay
                                 </button>
@@ -144,7 +159,7 @@ const TransferModal: React.FC<TransferModalProps> = ({
                                         tomorrow.setDate(tomorrow.getDate() + 1);
                                         setDate(tomorrow.toISOString().split('T')[0]);
                                     }}
-                                    className="flex-1 py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 active:scale-95 transition-all"
+                                    className="flex-1 py-1.5 px-3 bg-white border border-sky-200 rounded-lg text-xs font-bold text-sky-700 hover:bg-sky-100 hover:border-sky-300 active:scale-95 transition-all"
                                 >
                                     Ngày mai
                                 </button>
@@ -158,14 +173,18 @@ const TransferModal: React.FC<TransferModalProps> = ({
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             rows={2}
-                            className="w-full border-transparent bg-gray-50 rounded-xl p-3.5 focus:ring-2 focus:ring-medical-500 outline-none"
+                            className={`w-full rounded-xl p-3.5 focus:ring-2 outline-none ${isTransfer ? 'border-transparent bg-gray-50 focus:ring-medical-500' : 'bg-white border border-sky-100 focus:ring-sky-200'}`}
                             placeholder={mode === 'TRANSFER' ? "Lý do chuyển..." : "Tình trạng khi về, lời dặn..."}
                         />
                     </div>
 
                     <button 
                         onClick={handleSubmit}
-                        className={`w-full py-3.5 rounded-2xl text-white font-bold shadow-lg active:scale-95 transition-all text-lg ${mode === 'TRANSFER' ? 'bg-medical-500 hover:bg-medical-600 shadow-medical-500/30' : 'bg-slate-700 hover:bg-slate-800 shadow-slate-700/30'}`}
+                        className={`w-full py-3.5 rounded-2xl font-bold shadow-lg active:scale-95 transition-all text-lg ${
+                            isTransfer
+                                ? 'text-white bg-medical-500 hover:bg-medical-600 shadow-medical-500/30'
+                                : 'text-white bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 hover:opacity-90 shadow-sky-500/30'
+                        }`}
                     >
                         Xác Nhận
                     </button>

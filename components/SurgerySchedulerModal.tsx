@@ -83,8 +83,9 @@ function detectConflicts(schedule: AISuggestion[]): ConflictMap {
     const aStart = timeToMinutes(a.surgeryTime);
     const aDur = getDurationMinutes(a.PPPT);
     const aEnd = aStart !== null ? aStart + aDur : null;
+    const aSurgeon = (a.surgeonName || "").trim();
 
-    if (!aRoom || aStart === null || aEnd === null) continue;
+    if (aStart === null || aEnd === null) continue;
 
     for (let j = i + 1; j < schedule.length; j++) {
       const b = schedule[j];
@@ -92,14 +93,32 @@ function detectConflicts(schedule: AISuggestion[]): ConflictMap {
       const bStart = timeToMinutes(b.surgeryTime);
       const bDur = getDurationMinutes(b.PPPT);
       const bEnd = bStart !== null ? bStart + bDur : null;
+      const bSurgeon = (b.surgeonName || "").trim();
 
-      if (!bRoom || bStart === null || bEnd === null) continue;
-      if (aRoom !== bRoom) continue;
+      if (bStart === null || bEnd === null) continue;
 
       // Điều kiện giao nhau: [aStart, aEnd) vs [bStart, bEnd)
       const overlap = aStart < bEnd && bStart < aEnd;
-      if (overlap) {
+      if (!overlap) continue;
+
+      if (aRoom && bRoom && aRoom === bRoom) {
         const reason = `Trùng phòng ${aRoom} và khoảng thời gian với ca khác`;
+
+        if (!conflicts[a.id]) conflicts[a.id] = { reasons: [] };
+        if (!conflicts[b.id]) conflicts[b.id] = { reasons: [] };
+
+        conflicts[a.id].reasons.push(reason);
+        conflicts[b.id].reasons.push(reason);
+      }
+
+      const sameSurgeon =
+        aSurgeon &&
+        bSurgeon &&
+        aSurgeon.localeCompare(bSurgeon, undefined, { sensitivity: "accent" }) ===
+          0;
+
+      if (sameSurgeon) {
+        const reason = `Phẫu thuật viên ${aSurgeon} đang được xếp trùng giờ ở ca khác`;
 
         if (!conflicts[a.id]) conflicts[a.id] = { reasons: [] };
         if (!conflicts[b.id]) conflicts[b.id] = { reasons: [] };

@@ -92,6 +92,15 @@ function normalizeSurgeryTime(raw: string | undefined | null): string {
   return "";
 }
 
+function requiresTsMinh(pppt: string): boolean {
+  const text = pppt.toLowerCase();
+  return (
+    text.includes("ptns tái tạo") ||
+    text.includes("tái tạo dây chằng") ||
+    text.includes("thay khớp háng")
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Helper: sinh PPPT từ chẩn đoán (ưu tiên nhóm dây chằng)          */
 /* ------------------------------------------------------------------ */
@@ -488,12 +497,17 @@ Trả về MẢNG JSON:
           ? derivePPPTFromDiagnosis(originalDx)
           : (s.PPPT || "").trim() || "Phẫu thuật";
 
+        let surgeonName = (s.surgeonName ?? "").trim();
+        if (requiresTsMinh(finalPPPT)) {
+          surgeonName = "TS Minh";
+        }
+
         return {
           id: s.id as string,
           PPPT: finalPPPT,
           operatingRoom, // chỉ "1|7|8|9|10" hoặc ""
           surgeryTime, // "HH:mm" hoặc ""
-          surgeonName: (s.surgeonName ?? "").trim(),
+          surgeonName,
         };
       });
 

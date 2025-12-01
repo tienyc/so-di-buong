@@ -134,17 +134,17 @@ export function derivePPPTFromDiagnosis(diagnosis: string): string {
 
 function getDurationMinutes(pppt: string): number {
   const text = pppt.toLowerCase();
-  // Mổ lớn 60 phút
   if (
     text.includes("thay khớp") ||
-    text.includes("chuyển vạt") ||
-    text.includes("khx") ||
     text.includes("ptns tái tạo") ||
-    text.includes("dây chằng")
+    text.includes("dây chằng") ||
+    text.includes("khx")
   ) {
+    return 90;
+  }
+  if (text.includes("chuyển vạt")) {
     return 60;
   }
-  // Còn lại xem như 30 phút
   return 30;
 }
 
@@ -158,6 +158,15 @@ function minutesToTime(total: number): string {
   const h = Math.floor(clamped / 60).toString().padStart(2, "0");
   const m = (clamped % 60).toString().padStart(2, "0");
   return `${h}:${m}`;
+}
+
+function requiresTsMinh(pppt: string): boolean {
+  const text = pppt.toLowerCase();
+  return (
+    text.includes("ptns tái tạo") ||
+    text.includes("tái tạo dây chằng") ||
+    text.includes("thay khớp háng")
+  );
 }
 
 type Block = {
@@ -210,7 +219,8 @@ function classifyCase(dx: string, pppt: string, age: number): {
     dxLower.includes("hoại tử") ||
     dxLower.includes("hoai tu") ||
     dxLower.includes("mủ") ||
-    ppptLower.startsWith("pt nạo viêm");
+    ppptLower.startsWith("pt nạo viêm") ||
+    ppptLower.startsWith("pt chuyển vạt da");
 
   if (isInfection) {
     return { priority: "infection", primaryRooms: ["1"] };
@@ -232,7 +242,8 @@ function classifyCase(dx: string, pppt: string, age: number): {
   if (isTHA || isArthroscopy) {
     return {
       priority: "tha_arthroscopy",
-      primaryRooms: ["7", "8"], // luôn cố xếp 7–8 trước
+      primaryRooms: ["7"],
+      fallbackRooms: ["8"],
     };
   }
 
@@ -511,21 +522,24 @@ export function autoScheduleLocally(
       });
       roomBlocks[room].sort((a, b) => a.start - b.start);
 
+      const surgeonName = requiresTsMinh(pppt) ? "TS Minh" : "";
+
       results.push({
         id: patient.id,
         PPPT: pppt,
         operatingRoom: room,
         surgeryTime: timeStr,
-        surgeonName: "",
+        surgeonName,
       });
     } else {
+      const surgeonName = requiresTsMinh(pppt) ? "TS Minh" : "";
       // Không tìm được slot ở bất cứ buổi/phòng nào
       results.push({
         id: patient.id,
         PPPT: pppt,
         operatingRoom: "",
         surgeryTime: "",
-        surgeonName: "",
+        surgeonName,
       });
     }
   }

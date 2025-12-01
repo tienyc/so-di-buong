@@ -585,12 +585,21 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                     )}
 
                     {!isDischarged && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onAddOrder(patient.id); }}
-                            className="w-full bg-medical-500 text-white py-2.5 rounded-2xl text-xs font-bold hover:bg-medical-600 shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all mt-4"
-                        >
-                            <Plus size={18} /> Thêm Y Lệnh Mới
-                        </button>
+                        <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onAddOrder(patient.id); }}
+                                className="flex-1 bg-medical-500 text-white py-2.5 rounded-2xl text-xs font-bold hover:bg-medical-600 shadow-lg shadow-medical-500/30 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                            >
+                                <Plus size={18} /> Thêm Y Lệnh
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onDischarge(patient.id); }}
+                                className="flex-1 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 text-white py-2.5 rounded-2xl text-xs font-bold shadow-lg shadow-sky-500/30 border border-sky-400/20 hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                            >
+                                <LogOut size={16} className="text-white" />
+                                Ra viện
+                            </button>
+                        </div>
                     )}
                 </div>
             )}
