@@ -15,10 +15,12 @@ interface PatientCardProps {
     onConfirmDischarge?: (patientId: string) => void;
     onCompleteOrder?: (patientId: string, orderId: string) => void;
     onQuickSevereToggle?: (patientId: string) => void;
+    expanded?: boolean;
+    onToggleExpand?: () => void;
 }
 
-const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegisterSurgery, onCancelSurgery, onTransfer, onDischarge, onEdit, showDischargeConfirm, onConfirmDischarge, onCompleteOrder, onQuickSevereToggle }) => {
-    const [expanded, setExpanded] = useState(false);
+const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegisterSurgery, onCancelSurgery, onTransfer, onDischarge, onEdit, showDischargeConfirm, onConfirmDischarge, onCompleteOrder, onQuickSevereToggle, expanded: expandedProp, onToggleExpand }) => {
+    const [internalExpanded, setInternalExpanded] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
     const [menuPosition, setMenuPosition] = useState<{ top: number, right: number } | null>(null);
     const [showDetails, setShowDetails] = useState(false); 
@@ -257,6 +259,12 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         return 'bg-blue-500';
     };
 
+    const expanded = expandedProp ?? internalExpanded;
+    const handleToggleExpand = () => {
+        if (onToggleExpand) onToggleExpand();
+        else setInternalExpanded(prev => !prev);
+    };
+
     return (
         <div className={`relative rounded-2xl mb-3 transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] ${getCardStyle()}`}>
             <span
@@ -264,7 +272,7 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
                 aria-hidden="true"
             />
             
-            <div className="p-3 pl-8 flex items-start gap-3 cursor-pointer" onClick={() => !showMenu && setExpanded(!expanded)}>
+            <div className="p-3 pl-8 flex items-start gap-3 cursor-pointer" onClick={() => { if (!showMenu) handleToggleExpand(); }}>
                 <div className="flex flex-col items-center gap-2 pt-0.5 w-5 shrink-0">
                     {isSevere && (
                          <div className="text-red-500 animate-pulse drop-shadow-sm" title="Bệnh nặng">

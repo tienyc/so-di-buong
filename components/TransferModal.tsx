@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { RoomBlock } from '../types';
-import { X, ArrowRightLeft, LogOut } from 'lucide-react';
+import { X, ArrowRightLeft, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface TransferModalProps {
     isOpen: boolean;
@@ -49,6 +49,16 @@ const TransferModal: React.FC<TransferModalProps> = ({
     }, [availableRooms]);
 
     if (!isOpen) return null;
+
+    const adjustDate = (delta: number) => {
+        const base = date ? new Date(date) : new Date();
+        if (Number.isNaN(base.getTime())) {
+            setDate(new Date().toISOString().split('T')[0]);
+            return;
+        }
+        base.setDate(base.getDate() + delta);
+        setDate(base.toISOString().split('T')[0]);
+    };
 
     const handleSubmit = () => {
         onConfirm(
@@ -138,12 +148,28 @@ const TransferModal: React.FC<TransferModalProps> = ({
                     ) : (
                         <div className="bg-white p-4 rounded-2xl border border-sky-100 shadow-sm">
                             <label className="block text-xs font-bold text-sky-600 uppercase mb-2 tracking-wide">Ngày ra viện (Dự kiến/Chính thức)</label>
-                            <input
-                                type="date"
-                                value={date}
-                                onChange={(e) => setDate(e.target.value)}
-                                className="w-full bg-white border border-sky-200 rounded-xl p-3 focus:ring-2 focus:ring-sky-300 outline-none font-bold text-slate-900 text-center shadow-sm text-base mb-3"
-                            />
+                            <div className="flex items-center gap-2 mb-3">
+                                <button
+                                    type="button"
+                                    onClick={() => adjustDate(-1)}
+                                    className="p-3 rounded-xl border border-sky-200 text-sky-600 hover:bg-sky-50 active:scale-95 transition"
+                                >
+                                    <ChevronLeft size={18} />
+                                </button>
+                                <input
+                                    type="date"
+                                    value={date}
+                                    onChange={(e) => setDate(e.target.value)}
+                                    className="flex-1 bg-white border border-sky-200 rounded-xl p-3 focus:ring-2 focus:ring-sky-300 outline-none font-bold text-slate-900 text-center shadow-sm text-base"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => adjustDate(1)}
+                                    className="p-3 rounded-xl border border-sky-200 text-sky-600 hover:bg-sky-50 active:scale-95 transition"
+                                >
+                                    <ChevronRight size={18} />
+                                </button>
+                            </div>
                             <div className="flex gap-2">
                                 <button
                                     type="button"

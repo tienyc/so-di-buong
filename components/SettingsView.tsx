@@ -260,7 +260,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onCleanupD
     }
 
     return (
-        <div className="max-w-2xl mx-auto pb-24 px-2">
+        <div className="w-full max-w-2xl xl:max-w-[1100px] 2xl:max-w-[1400px] mx-auto pb-24 px-2 sm:px-4">
             {/* Header Sticky */}
             <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-md py-4 mb-6 border-b border-gray-100 flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-slate-800 pl-2">Cài Đặt Hệ Thống</h2>

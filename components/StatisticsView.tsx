@@ -57,7 +57,7 @@ const StatisticsView: React.FC<StatisticsViewProps> = ({ rooms }) => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6 pb-20">
+        <div className="w-full max-w-4xl xl:max-w-[1100px] 2xl:max-w-[1400px] mx-auto space-y-6 pb-20 px-2 sm:px-4">
             <h2 className="text-3xl font-bold text-slate-800 mb-6 flex items-center gap-3 px-1">
                 <PieChart className="text-purple-600" size={32}/> Thống Kê Tổng Hợp
             </h2>

@@ -195,6 +195,7 @@ const App: React.FC = () => {
 
     const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
     const [expandedBlocks, setExpandedBlocks] = useState<{[key: string]: boolean}>({});
+    const [expandedPatientId, setExpandedPatientId] = useState<string | null>(null);
 
     const [surgeryTab, setSurgeryTab] = useState<'WAITING' | 'SCHEDULED'>('WAITING');
     const [expandedSurgeryGroups, setExpandedSurgeryGroups] = useState<{[key: string]: boolean}>({ 'today': true, 'tomorrow': true, 'upcoming': true });
@@ -924,7 +925,7 @@ const App: React.FC = () => {
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
             {/* Header */}
             <header className={`sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm transition-transform duration-300 ease-out ${headerHidden ? '-translate-y-full' : 'translate-y-0'}`}>
-                <div className="px-3 py-3 pb-4 max-w-2xl mx-auto relative">
+                <div className="px-3 py-3 pb-4 max-w-2xl xl:max-w-[1100px] 2xl:max-w-[1400px] w-full mx-auto relative">
                     <div className="bg-white rounded-[28px] px-4 py-3 shadow-lg border border-slate-100 flex flex-col gap-3">
                         {/* Dòng 1: Logo, Tên App, Icon actions */}
                         <div className="flex items-center justify-between gap-4">
@@ -1141,7 +1142,7 @@ const App: React.FC = () => {
             )}
 
             {/* Main Content */}
-            <main className="flex-1 px-4 pt-4 pb-28 max-w-2xl mx-auto w-full">
+            <main className="flex-1 px-4 pt-4 pb-28 max-w-2xl xl:max-w-[1100px] 2xl:max-w-[1400px] mx-auto w-full">
                 
                 {currentView === AppView.SETTINGS && (
                     <SettingsView 
@@ -1479,7 +1480,22 @@ const App: React.FC = () => {
 
                                                             {expandedBlocks[block.id] && (
                                                                 <div className="px-3 pb-3 pt-0">
-{sortedBlockPatients.map(p => <PatientCard key={p.id} patient={p} onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }} onRegisterSurgery={() => handleRegisterSurgery(p.id)} onCancelSurgery={() => handleCancelSurgery(p.id)} onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }} onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }} onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }} onCompleteOrder={handleToggleCompleteOrder} onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })} />)}
+{sortedBlockPatients.map(p => (
+    <PatientCard
+        key={p.id}
+        patient={p}
+        expanded={expandedPatientId === p.id}
+        onToggleExpand={() => setExpandedPatientId(prev => prev === p.id ? null : p.id)}
+        onAddOrder={() => { setSelectedPatientId(p.id); setIsOrderModalOpen(true); }}
+        onRegisterSurgery={() => handleRegisterSurgery(p.id)}
+        onCancelSurgery={() => handleCancelSurgery(p.id)}
+        onTransfer={() => { setSelectedPatientId(p.id); setTransferMode('TRANSFER'); setIsTransferModalOpen(true); }}
+        onDischarge={() => { setSelectedPatientId(p.id); setTransferMode('DISCHARGE'); setIsTransferModalOpen(true); }}
+        onEdit={() => { setSelectedPatientId(p.id); setIsEditModalOpen(true); }}
+        onCompleteOrder={handleToggleCompleteOrder}
+        onQuickSevereToggle={(id) => handleUpdatePatient(id, { isSevere: !p.isSevere })}
+    />
+))}
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1497,7 +1513,7 @@ const App: React.FC = () => {
 
             {/* Bottom Navigation */}
             <nav className="fixed bottom-0 inset-x-0 flex justify-center z-40 pb-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-                <div className="bg-white/90 backdrop-blur-2xl rounded-full flex justify-around items-center h-[72px] mx-4 px-4 shadow-2xl ring-1 ring-black/5 max-w-2xl w-full transition-all">
+                <div className="bg-white/90 backdrop-blur-2xl rounded-full flex justify-around items-center h-[72px] mx-4 px-4 shadow-2xl ring-1 ring-black/5 max-w-2xl xl:max-w-[1100px] 2xl:max-w-[1400px] w-full transition-all">
                     {[ { id: AppView.WARD_ROUND, icon: LayoutDashboard, label: 'Đi buồng', color: 'medical' }, { id: AppView.SEVERE_CASES, icon: AlertCircle, label: 'Nặng', color: 'red', count: severeCount }, { id: AppView.SURGERY_SCHEDULE, icon: Calendar, label: 'Lịch mổ', color: 'blue', count: surgeryCount }, { id: AppView.DISCHARGE_LIST, icon: LogOut, label: 'Ra viện', color: 'green', count: dischargeTodayCount } ].map(item => (
                         <button key={item.id} onClick={() => setCurrentView(item.id)} className={`group flex flex-col items-center gap-1.5 w-full h-full justify-center active:scale-95 transition-all ${currentView === item.id ? `text-${item.color}-600` : 'text-slate-500 hover:text-slate-700'}`}>
                             <div className={`p-1 rounded-xl relative ${currentView === item.id ? `bg-${item.color}-50` : ''}`}>
