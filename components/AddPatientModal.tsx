@@ -457,8 +457,8 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                                                 Xóa
                                                             </button>
                                                         </div>
-                                                        <div className="grid grid-cols-2 gap-2 text-xs">
-                                                            <div className="col-span-2">
+                                                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
+                                                            <div className="sm:col-span-3">
                                                                 <label className="font-semibold text-slate-600 mb-1 block">Họ tên</label>
                                                                 <input
                                                                     type="text"
@@ -467,7 +467,7 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                                                     className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
                                                                 />
                                                             </div>
-                                                            <div>
+                                                            <div className="sm:col-span-1">
                                                                 <label className="font-semibold text-slate-600 mb-1 block">Tuổi</label>
                                                                 <input
                                                                     type="number"
@@ -476,7 +476,16 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                                                     className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
                                                                 />
                                                             </div>
-                                                        <div>
+                                                            <div className="sm:col-span-4">
+                                                                <label className="font-semibold text-slate-600 mb-1 block">Chẩn đoán</label>
+                                                                <input
+                                                                    type="text"
+                                                                    value={patient.diagnosis || ''}
+                                                                    onChange={(e) => handleAiDraftChange(idx, 'diagnosis', e.target.value)}
+                                                                    className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
+                                                                />
+                                                            </div>
+                                                        <div className="sm:col-span-2">
                                                             <label className="font-semibold text-slate-600 mb-1 block">Khu</label>
                                                             {aiWardOptions.length > 0 ? (
                                                                 <select
@@ -496,9 +505,9 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                                                     onChange={(e) => handleAiDraftChange(idx, 'ward', e.target.value)}
                                                                     className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
                                                                 />
-                                                            )}
-                                                        </div>
-                                                        <div>
+                                                                )}
+                                                            </div>
+                                                        <div className="sm:col-span-2">
                                                             <label className="font-semibold text-slate-600 mb-1 block">Phòng</label>
                                                             {roomOptions.length > 0 ? (
                                                                 <select
