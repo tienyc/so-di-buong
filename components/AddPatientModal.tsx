@@ -476,17 +476,6 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
                                                                     className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
                                                                 />
                                                             </div>
-                                                            <div>
-                                                            <label className="font-semibold text-slate-600 mb-1 block">Giới</label>
-                                                            <select
-                                                                value={patient.gender || 'Nam'}
-                                                                onChange={(e) => handleAiDraftChange(idx, 'gender', e.target.value)}
-                                                                className="w-full border border-blue-200 rounded-lg px-2 py-1.5 text-sm"
-                                                            >
-                                                                <option value="Nam">Nam</option>
-                                                                <option value="Nữ">Nữ</option>
-                                                            </select>
-                                                        </div>
                                                         <div>
                                                             <label className="font-semibold text-slate-600 mb-1 block">Khu</label>
                                                             {aiWardOptions.length > 0 ? (
