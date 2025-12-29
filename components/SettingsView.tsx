@@ -14,9 +14,10 @@ interface WardConfig {
 interface SettingsViewProps {
     onSettingsSaved?: () => void;
     onCleanupDischarged?: () => Promise<void>;
+    onDeleteAllPatients?: () => Promise<void>;
 }
 
-const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onCleanupDischarged }) => {
+const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onCleanupDischarged, onDeleteAllPatients }) => {
     // State lưu toàn bộ cài đặt
     const [settings, setSettings] = useState<SettingsPayload>(getDefaultSettings());
     const [isLoading, setIsLoading] = useState(true);
@@ -31,6 +32,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onCleanupD
     const [isCleaning, setIsCleaning] = useState(false);
     const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
     const [cleanupError, setCleanupError] = useState<string | null>(null);
+    const [isDeletingAll, setIsDeletingAll] = useState(false);
+    const [deleteAllMessage, setDeleteAllMessage] = useState<string | null>(null);
+    const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
     
     // State quản lý input cho các mục cấu hình danh sách (generic)
     const [configInputs, setConfigInputs] = useState<{[key: string]: string}>({});
@@ -160,6 +164,37 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onCleanupD
             setCleanupError('Có lỗi khi xóa bệnh nhân đã ra viện.');
         } finally {
             setIsCleaning(false);
+        }
+    };
+
+    const handleDeleteAllPatients = async () => {
+        if (!onDeleteAllPatients) return;
+
+        const confirmText = 'XOA TAT CA';
+        const userInput = window.prompt(
+            `⚠️ CẢNH BÁO NGHIÊM TRỌNG ⚠️\n\n` +
+            `Bạn sắp XÓA VĨNH VIỄN TẤT CẢ bệnh nhân trong hệ thống!\n` +
+            `Hành động này KHÔNG THỂ HOÀN TÁC.\n\n` +
+            `Để xác nhận, vui lòng nhập chính xác: ${confirmText}`
+        );
+
+        if (userInput !== confirmText) {
+            if (userInput !== null) {
+                alert('Xác nhận không đúng. Đã hủy thao tác.');
+            }
+            return;
+        }
+
+        try {
+            setIsDeletingAll(true);
+            setDeleteAllError(null);
+            await onDeleteAllPatients();
+            setDeleteAllMessage('✅ Đã xóa tất cả bệnh nhân thành công!');
+        } catch (error) {
+            console.error('Delete all error:', error);
+            setDeleteAllError('❌ Có lỗi khi xóa dữ liệu. Vui lòng thử lại.');
+        } finally {
+            setIsDeletingAll(false);
         }
     };
 
@@ -477,6 +512,49 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved, onCleanupD
                         {cleanupError && (
                             <div className="text-sm text-red-600 bg-red-100 border border-red-200 rounded-xl p-2">
                                 {cleanupError}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+
+            {/* 5. XÓA TẤT CẢ DỮ LIỆU - Chức năng nguy hiểm */}
+            {onDeleteAllPatients && (
+                <>
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider pl-2 mb-3 mt-8">⚠️ Khu vực nguy hiểm</h3>
+                    <div className="bg-gradient-to-br from-red-600 to-red-700 border-2 border-red-800 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
+                        <div className="flex items-start gap-3">
+                            <div className="bg-white text-red-600 p-2.5 rounded-xl shadow-md">
+                                <AlertCircle size={24}/>
+                            </div>
+                            <div>
+                                <h4 className="font-extrabold text-white text-lg">XÓA TẤT CẢ BỆNH NHÂN</h4>
+                                <p className="text-sm text-red-100 leading-relaxed mt-1">
+                                    <strong className="text-white">CẢNH BÁO:</strong> Chức năng này sẽ xóa <strong className="underline">TOÀN BỘ</strong> bệnh nhân trong hệ thống,
+                                    bao gồm cả bệnh nhân đang điều trị. Dữ liệu sẽ <strong className="text-white">KHÔNG THỂ KHÔI PHỤC</strong> sau khi xóa.
+                                </p>
+                                <p className="text-xs text-red-200 mt-2 italic">
+                                    💡 Sử dụng khi chuyển giao app cho khoa mới hoặc cần reset toàn bộ dữ liệu.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleDeleteAllPatients}
+                            disabled={isDeletingAll}
+                            className="flex items-center justify-center gap-2 w-full bg-white text-red-700 py-4 rounded-xl font-extrabold text-base shadow-2xl hover:bg-red-50 active:scale-95 transition-all disabled:opacity-70 border-2 border-red-800"
+                        >
+                            {isDeletingAll ? <RefreshCw size={20} className="animate-spin"/> : <AlertCircle size={20} />}
+                            {isDeletingAll ? 'Đang xóa tất cả dữ liệu...' : '⚠️ XÓA TẤT CẢ BỆNH NHÂN'}
+                        </button>
+                        {deleteAllMessage && (
+                            <div className="text-sm text-white bg-green-600/30 border border-green-400 rounded-xl p-3 font-bold">
+                                {deleteAllMessage}
+                            </div>
+                        )}
+                        {deleteAllError && (
+                            <div className="text-sm text-white bg-red-900/50 border border-red-400 rounded-xl p-3 font-bold">
+                                {deleteAllError}
                             </div>
                         )}
                     </div>

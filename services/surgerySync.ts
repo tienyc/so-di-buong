@@ -35,6 +35,7 @@ export const syncSurgeryToKhoa = async (surgerySheetUrl: string, patient: Patien
         action: 'SYNC_SURGERY',
         secret: API_SECRET,
         data: {
+          id: patient.id,
           fullName: patient.fullName,
           surgeryDate: patient.surgeryDate,
           surgeryTime: patient.surgeryTime,
@@ -114,6 +115,7 @@ export const syncBatchSurgeries = async (surgerySheetUrl: string, patients: Pati
         secret: API_SECRET,
         data: {
           patients: validPatients.map(p => ({
+            id: p.id,
             fullName: p.fullName,
             surgeryDate: p.surgeryDate,
             surgeryTime: p.surgeryTime,
@@ -242,8 +244,7 @@ export const triggerHospitalSync = async (hospitalSyncUrl: string): Promise<{ su
         'Content-Type': 'text/plain',
       },
       body: JSON.stringify({
-        action: 'TRIGGER_SYNC',
-        triggerSync: true,
+        action: 'SYNC_TO_HOSPITAL',
         secret: API_SECRET,
       })
     });

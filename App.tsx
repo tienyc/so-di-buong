@@ -495,6 +495,43 @@ const App: React.FC = () => {
         }
     };
 
+    const handleDeleteAllPatients = async (): Promise<void> => {
+        const allPatients = rooms.flatMap(block => block.patients);
+        const count = allPatients.length;
+
+        if (count === 0) {
+            setNotification({ message: 'Không có bệnh nhân nào để xóa.', type: 'success' });
+            return;
+        }
+
+        try {
+            // Xóa từng bệnh nhân khỏi Firebase
+            for (const patient of allPatients) {
+                await deletePatient(patient.id);
+            }
+
+            // Clear tất cả dữ liệu local
+            setRooms([]);
+            setSelectedPatientId(null);
+            setIsEditModalOpen(false);
+
+            setNotification({
+                message: `✅ Đã xóa ${count} bệnh nhân khỏi hệ thống.`,
+                type: 'success'
+            });
+
+            // Reload data để đảm bảo sync
+            await loadDataFromSheet();
+        } catch (error) {
+            console.error('Lỗi xóa tất cả bệnh nhân:', error);
+            setNotification({
+                message: 'Có lỗi khi xóa dữ liệu. Vui lòng thử lại.',
+                type: 'error'
+            });
+            throw error;
+        }
+    };
+
     const handleToggleCompleteOrder = (pid: string, oid: string) => {
         const updatedRooms = rooms.map(b => ({
             ...b,
@@ -702,26 +739,6 @@ const App: React.FC = () => {
         ).length;
     }, [rooms]);
 
-    const handleScanServicePatients = async () => {
-        const targetDate = admissionDateFilterDate ? getLocalIsoDate(admissionDateFilterDate) : null;
-        const patientsToSchedule = allPatients.filter(p => !p.isScheduledForSurgery && matchesServiceFilter(p, targetDate));
-
-        if (patientsToSchedule.length === 0) {
-            setNotification({ message: 'Không tìm thấy bệnh nhân mới trong phòng dịch vụ cần đăng ký mổ.', type: 'success' });
-            return;
-        }
-
-        try {
-            await Promise.all(patientsToSchedule.map(p => handleUpdatePatient(p.id, {
-                isScheduledForSurgery: true,
-                status: PatientStatus.SURGERY_READY,
-            })));
-            setNotification({ message: `Đã tự động đăng ký mổ cho ${patientsToSchedule.length} bệnh nhân phòng dịch vụ.`, type: 'success' });
-            loadDataFromSheet();
-        } catch (error) {
-            setNotification({ message: 'Đã xảy ra lỗi khi đăng ký mổ cho bệnh nhân dịch vụ.', type: 'error' });
-        }
-    };
 
     const handleTriggerHospitalSync = async () => {
         if (!hospitalSyncUrl) {
@@ -958,8 +975,8 @@ const App: React.FC = () => {
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <span className="font-bold text-slate-900 text-base sm:text-lg">
-                                            <span className="sm:hidden">Ngoại CT</span>
-                                            <span className="hidden sm:inline">Ngoại CT - Bỏng</span>
+                                            <span className="sm:hidden">Ngoại TK</span>
+                                            <span className="hidden sm:inline">Khoa Ngoại Thần Kinh</span>
                                         </span>
                                         {currentView === AppView.WARD_ROUND && (
                                             <button
@@ -1167,11 +1184,12 @@ const App: React.FC = () => {
             <main className="flex-1 px-4 pt-4 pb-28 max-w-2xl xl:max-w-[1100px] 2xl:max-w-[1400px] mx-auto w-full">
                 
                 {currentView === AppView.SETTINGS && (
-                    <SettingsView 
-                        onSettingsSaved={loadDataFromSheet} 
+                    <SettingsView
+                        onSettingsSaved={loadDataFromSheet}
                         onCleanupDischarged={async () => {
                             await handleCleanupDischargedPatients();
                         }}
+                        onDeleteAllPatients={handleDeleteAllPatients}
                     />
                 )}
                 {currentView === AppView.STATISTICS && <StatisticsView rooms={rooms} />}
@@ -1291,20 +1309,14 @@ const App: React.FC = () => {
                                         </div>
                                         {surgeryTab === 'WAITING' && (
                                              <div className="space-y-3">
-                                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                                                    <button 
+                                                <div className="mt-2">
+                                                    <button
                                                         onClick={handleOpenLocalScheduler}
                                                         disabled={isScheduling || unscheduledPatients.length === 0}
                                                         className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-sky-600 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-gray-50 hover:text-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
                                                         <Lightbulb size={18} />
                                                         Gợi ý Xếp lịch
-                                                    </button>
-                                                    <button 
-                                                        onClick={handleScanServicePatients}
-                                                        className="w-full flex items-center justify-center gap-2 bg-white border border-emerald-200 text-emerald-600 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-emerald-50"
-                                                    >
-                                                        Quét BN Dịch Vụ
                                                     </button>
                                                 </div>
 

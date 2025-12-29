@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Patient, PatientStatus, RoomBlock } from '../types';
 import { X, Plus, Sparkles, Loader2, PenTool, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { parsePatientInput } from '../services/geminiService';
+import { WardConfig } from '../services/sheetMapping';
 
 interface AddPatientModalProps {
     isOpen: boolean;
@@ -61,6 +62,15 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         });
     }, [rooms]);
 
+    // ✅ Convert rooms -> WardConfig để truyền vào parsePatientInput
+    const wardConfigs = useMemo((): WardConfig[] => {
+        return rooms.map(r => ({
+            id: r.id,
+            name: r.name,
+            rooms: r.definedRooms || []
+        }));
+    }, [rooms]);
+
     if (!isOpen) return null;
 
     const handleManualChange = (field: string, value: any) => {
@@ -111,14 +121,15 @@ const AddPatientModal: React.FC<AddPatientModalProps> = ({ isOpen, onClose, onAd
         onClose();
     };
 
-    const FALLBACK_WARD = 'Cấp cứu 1';
-    const FALLBACK_ROOM = 'Cấp cứu 1';
+    const FALLBACK_WARD = 'Tiếp đón';
+    const FALLBACK_ROOM = 'Tiếp đón';
 
     const handleAIImport = async () => {
         if (!importText.trim()) return;
         setIsProcessing(true);
         try {
-            const parsedPatients = await parsePatientInput(importText);
+            // ✅ Truyền wardConfigs để AI sử dụng dynamic settings
+            const parsedPatients = await parsePatientInput(importText, wardConfigs);
             
             if (!parsedPatients || parsedPatients.length === 0) {
                 setAiPreview(null);

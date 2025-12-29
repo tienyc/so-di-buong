@@ -1,14 +1,7 @@
 // services/geminiService.ts
 
 import { GoogleGenAI, Type } from "@google/genai";
-import {
-  getWardFromRoom,
-  getRoomWardMappingForPrompt,
-  getAllValidRooms,
-} from "./roomMapping";
-
-// Re-export cho nơi khác dùng nếu cần
-export { getWardFromRoom } from "./roomMapping";
+import { WardConfig } from "./sheetMapping";
 
 const apiKey = process.env.API_KEY || "";
 const ai = new GoogleGenAI({ apiKey });
@@ -27,9 +20,56 @@ function safeJsonParse<T>(text: string | undefined | null, fallback: T): T {
   }
 }
 
-// Xây lookup cho room: "b2" -> "B2"
-function buildRoomLookup() {
-  const validRooms = getAllValidRooms();
+/* ------------------------------------------------------------------ */
+/*  Dynamic Ward/Room Helpers - Thay thế static mapping               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Lấy tất cả phòng hợp lệ từ dynamic wardConfigs
+ */
+function getAllValidRoomsFromConfig(wardConfigs: WardConfig[]): string[] {
+  const allRooms: string[] = [];
+  wardConfigs.forEach(ward => {
+    if (ward.rooms && Array.isArray(ward.rooms)) {
+      allRooms.push(...ward.rooms);
+    }
+  });
+  return Array.from(new Set(allRooms)); // Remove duplicates
+}
+
+/**
+ * Tạo mapping string cho AI prompt từ wardConfigs
+ */
+function getRoomWardMappingForPromptFromConfig(wardConfigs: WardConfig[]): string {
+  let result = '';
+  wardConfigs.forEach(ward => {
+    const rooms = (ward.rooms || []).join(', ');
+    if (rooms) {
+      result += `   **${ward.name}**: ${rooms}\n`;
+    }
+  });
+  return result || '   (Chưa có cấu hình phòng)';
+}
+
+/**
+ * Lấy tên khu từ số phòng dựa trên wardConfigs
+ */
+function getWardFromRoomByConfig(roomNumber: string, wardConfigs: WardConfig[]): string {
+  const normalized = roomNumber.trim();
+  for (const ward of wardConfigs) {
+    if (ward.rooms && ward.rooms.includes(normalized)) {
+      return ward.name;
+    }
+  }
+  // Fallback: nếu không tìm thấy, trả về ward đầu tiên hoặc "Chưa xác định"
+  return wardConfigs[0]?.name || 'Chưa xác định';
+}
+
+/**
+ * Xây lookup cho room: "b2" -> "B2" từ dynamic config
+ */
+function buildRoomLookup(wardConfigs: WardConfig[]) {
+  const validRooms = getAllValidRoomsFromConfig(wardConfigs);
   const roomLookup: Record<string, string> = {};
   for (const room of validRooms) {
     roomLookup[room.toLowerCase().trim()] = room;
@@ -38,7 +78,7 @@ function buildRoomLookup() {
 }
 
 // Mặc định nếu không tìm được phòng
-const DEFAULT_ROOM = "Cấp cứu 1";
+const DEFAULT_ROOM = "Tiếp đón";
 
 /**
  * Nếu raw rỗng → DEFAULT_ROOM
@@ -218,13 +258,14 @@ type RawPatient = {
   ward?: string;
 };
 
-export const parsePatientInput = async (inputText: string) => {
+export const parsePatientInput = async (inputText: string, wardConfigs: WardConfig[] = []) => {
   try {
     const now = new Date();
     const todayISO = now.toISOString().split("T")[0];
 
-    const { validRooms, roomLookup } = buildRoomLookup();
-    const roomWardMapping = getRoomWardMappingForPrompt();
+    // ✅ SỬ DỤNG DYNAMIC CONFIG thay vì static mapping
+    const { validRooms, roomLookup } = buildRoomLookup(wardConfigs);
+    const roomWardMapping = getRoomWardMappingForPromptFromConfig(wardConfigs);
 
     const prompt = `
 Bạn là trợ lý điều dưỡng khoa Chấn thương chỉnh hình. Nhiệm vụ: từ đoạn nội dung bác sĩ cung cấp, hãy trích xuất danh sách bệnh nhân đang nằm viện.
@@ -311,7 +352,7 @@ Không thêm trường khác, không ghi chú ngoài JSON.
       )
       .map((p) => {
         const roomNumber = normalizeRoomNumber(p.roomNumber, roomLookup);
-        const ward = getWardFromRoom(roomNumber) || ""; // luôn lấy từ mapping, không tạo khu mới
+        const ward = getWardFromRoomByConfig(roomNumber, wardConfigs); // ✅ Dùng dynamic config
 
         return {
           fullName: p.fullName!.trim(),

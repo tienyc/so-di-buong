@@ -259,10 +259,23 @@ const PatientCard: React.FC<PatientCardProps> = ({ patient, onAddOrder, onRegist
         if (!source) return '';
         const normalized = source.toLowerCase();
 
+        // Phòng số (Phòng 4 → P4, Phòng 1 → P1)
+        if (normalized.startsWith('phòng') || normalized.startsWith('phong') || normalized.startsWith('p ')) {
+            const digits = source.match(/\d+/)?.[0] || '';
+            return digits ? `P${digits}` : 'P';
+        }
+
+        // Tiếp đón
+        if (normalized.includes('tiếp đón') || normalized.includes('tiep don')) {
+            return 'TĐ';
+        }
+
+        // Dịch vụ
         if (normalized.startsWith('dịch vụ') || normalized.startsWith('dv')) {
             const digits = source.match(/\d+/)?.[0] || '';
             return `DV${digits}`;
         }
+
         if (normalized.includes('cấp cứu') || normalized.includes('cap cuu')) {
             const digits = source.match(/\d+/)?.[0];
             return digits ? `CC${digits}` : 'CC';
